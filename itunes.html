@@ -489,6 +489,30 @@
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
 
+  /* ---------- era picker ---------- */
+  .eras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+  .era {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 11px 6px; border-radius: 10px;
+    background: rgba(255,255,255,.02);
+    border: 1px solid var(--line);
+    cursor: pointer; touch-action: manipulation;
+    transition: border-color .14s, background .14s, color .14s;
+  }
+  .era b { font-size: 0.95rem; font-weight: 800; letter-spacing: -0.01em; }
+  .era span { font-size: 0.68rem; color: var(--dimmer); font-family: var(--mono); }
+
+  .era.on {
+    background: rgba(240,180,41,.13);
+    border-color: rgba(240,180,41,.55);
+    color: var(--gold);
+  }
+  .era.on span { color: rgba(240,180,41,.75); }
+  .era:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  @media (max-width: 400px) { .eras { grid-template-columns: repeat(3, 1fr); } }
+
   /* The title doubles as a link home from either game. */
   h1 a.home {
     color: inherit; text-decoration: none;
@@ -506,6 +530,7 @@
     <h1><a href="/" class="home">Songless <span class="mark">Unlimited</span></a></h1>
     <div class="badge">🎤 Hip-Hop &amp; Rap</div>
     <div class="toolbar">
+      <button class="btn-sm" id="btn-eras">Eras</button>
       <button class="btn-sm" id="btn-stats">Stats</button>
       <button class="btn-sm" id="btn-how">How to play</button>
     </div>
@@ -541,10 +566,18 @@ const fmt = s => (s < 1 ? s.toFixed(1) : String(s))
 const scale = t => Math.sqrt(Math.max(0, t) / FULL) * 100
 const STORE_KEY = 'songless-unlimited-stats-v1'
 const BAG_KEY = 'songless-unlimited-bag-v1'
+const ERAS_KEY = 'songless-unlimited-eras-v1'
+
+// Decades present in the catalog (1985–2025).
+const ERAS = [1980, 1990, 2000, 2010, 2020]
+const eraLabel = d => (d === 2000 ? '00s' : `${String(d).slice(2)}s`)
+const decadeOf = s => (s.year ? Math.floor(s.year / 10) * 10 : null)
 
 /* ============================ state ============================ */
 
-let CATALOG = []
+let CATALOG = []   // everything that shipped
+let POOL = []      // what the selected eras allow
+let pendingEras = null
 let song = null
 let guesses = []          // {label, trackId, kind:'wrong'|'skip'|'correct'}
 let finished = false
@@ -620,7 +653,7 @@ function recordResult(didWin, attempts) {
 /* ============================ song selection ============================ */
 
 // Shuffle bag: play through the whole catalog before any repeats.
-function nextFromBag(pool = CATALOG) {
+function nextFromBag(pool = POOL) {
   let bag = []
   try { bag = JSON.parse(localStorage.getItem(BAG_KEY) || '[]') } catch {}
   bag = Array.isArray(bag) ? bag.filter(id => pool.some(s => s.trackId === id)) : []
@@ -640,6 +673,90 @@ function nextFromBag(pool = CATALOG) {
   const id = bag.pop()
   try { localStorage.setItem(BAG_KEY, JSON.stringify(bag)) } catch {}
   return pool.find(s => s.trackId === id) || pool[0]
+}
+
+/* ============================ eras ============================ */
+
+function loadEras() {
+  try {
+    const v = JSON.parse(localStorage.getItem(ERAS_KEY))
+    const clean = Array.isArray(v) ? v.filter(d => ERAS.includes(d)) : []
+    if (clean.length) return clean
+  } catch {}
+  return [...ERAS]
+}
+
+const inEras = (s, sel) => {
+  const d = decadeOf(s)
+  // A track with no year is never excluded by an era choice.
+  return d === null || sel.includes(d)
+}
+
+function eraCounts() {
+  const c = {}
+  for (const d of ERAS) c[d] = 0
+  for (const s of CATALOG) {
+    const d = decadeOf(s)
+    if (d !== null && d in c) c[d]++
+  }
+  return c
+}
+
+const countFor = sel => CATALOG.filter(s => inEras(s, sel)).length
+
+function applyEras() {
+  const sel = loadEras()
+  POOL = CATALOG.filter(s => inEras(s, sel))
+  // Never leave the game with nothing to play.
+  if (!POOL.length) POOL = CATALOG.slice()
+}
+
+function erasHtml() {
+  const counts = eraCounts()
+  const sel = pendingEras
+  const total = countFor(sel)
+  return `
+    <h2>Eras</h2>
+    <p class="note" style="text-align:left;margin:0 0 14px">
+      Pick which decades to play. The number under each is how many tracks it adds.
+    </p>
+    <div class="eras">
+      ${ERAS.map(d => `
+        <button class="era ${sel.includes(d) ? 'on' : ''}" data-d="${d}"
+                aria-pressed="${sel.includes(d)}">
+          <b>${eraLabel(d)}</b><span>${counts[d]}</span>
+        </button>`).join('')}
+    </div>
+    <p class="note" style="margin-top:15px">
+      <b style="color:var(--gold);font-size:1.05rem">${total}</b>
+      song${total === 1 ? '' : 's'} in play
+    </p>
+    <button class="btn-wide btn-primary" id="era-apply" ${total ? '' : 'disabled'}>
+      ${total ? 'Play these eras' : 'Pick at least one era'}
+    </button>`
+}
+
+function wireEras() {
+  for (const b of document.querySelectorAll('.era')) {
+    b.onclick = () => {
+      const d = Number(b.dataset.d)
+      pendingEras = pendingEras.includes(d)
+        ? pendingEras.filter(x => x !== d)
+        : [...pendingEras, d].sort((a, z) => a - z)
+      openModal(erasHtml())
+      wireEras()
+    }
+  }
+  const apply = $('era-apply')
+  if (apply) apply.onclick = () => {
+    try { localStorage.setItem(ERAS_KEY, JSON.stringify(pendingEras)) } catch {}
+    // The shuffle bag holds ids from the old selection.
+    try { localStorage.removeItem(BAG_KEY) } catch {}
+    applyEras()
+    $('modal').hidden = true
+    stopAudio()
+    newRound()
+  }
 }
 
 /* ============================ audio ============================ */
@@ -846,7 +963,7 @@ function onInput() {
   }
 
   const starts = [], contains = []
-  for (const s of CATALOG) {
+  for (const s of POOL) {
     const hay = s._search
     const i = hay.indexOf(q)
     if (i === 0) starts.push(s)
@@ -917,8 +1034,8 @@ function submitGuess() {
   // Resolve the typed text to a catalog entry.
   const q = norm(raw)
   let guessed = lastSuggestions.find(s => norm(label(s)) === q)
-    || CATALOG.find(s => norm(label(s)) === q)
-    || CATALOG.find(s => s._search === q)
+    || POOL.find(s => norm(label(s)) === q)
+    || POOL.find(s => s._search === q)
     || (lastSuggestions.length === 1 ? lastSuggestions[0] : null)
 
   if (!guessed) {
@@ -989,8 +1106,8 @@ async function newRound(attempt = 0) {
     return
   }
 
-  const pool = CATALOG.filter(s => !dead.has(s.trackId))
-  song = nextFromBag(pool.length ? pool : CATALOG)
+  const pool = POOL.filter(s => !dead.has(s.trackId))
+  song = nextFromBag(pool.length ? pool : POOL)
   audio.src = song.previewUrl
 
   render()
@@ -1053,7 +1170,8 @@ function statsHtml() {
           <div class="bar" style="width:${Math.max(8, (n / max) * 100)}%">${n}</div>
         </div>`).join('')}
     </div>
-    <p class="note">Wins by number of tries. ${CATALOG.length} songs in the catalog.</p>
+    <p class="note">Wins by number of tries.<br>
+      ${POOL.length} of ${CATALOG.length} songs in play${POOL.length === CATALOG.length ? '' : ' — see Eras'}.</p>
   `
 }
 
@@ -1078,6 +1196,11 @@ const HOW_HTML = `
 /* ============================ boot ============================ */
 
 async function boot() {
+  $('btn-eras').onclick = () => {
+    pendingEras = loadEras()
+    openModal(erasHtml())
+    wireEras()
+  }
   $('btn-stats').onclick = () => openModal(statsHtml())
   $('btn-how').onclick = () => openModal(HOW_HTML)
   $('modal-close').onclick = () => { $('modal').hidden = true }
@@ -1105,6 +1228,7 @@ async function boot() {
     .filter(s => s && s.trackId && s.previewUrl && s.artist && s.title)
 
   for (const s of CATALOG) s._search = `${norm(s.artist)} ${norm(s.title)}`
+  applyEras()
 
   if (!CATALOG.length) {
     $('app').innerHTML = `<div class="card"><div class="err">The catalog is empty.</div></div>`
@@ -1119,6 +1243,7 @@ async function boot() {
   const target = m ? CATALOG.find(s => s.trackId === Number(m[1])) : null
 
   if (target) {
+    if (!POOL.some(s => s.trackId === target.trackId)) POOL = [target, ...POOL]
     guesses = []; finished = false; won = false
     song = target
     audio.src = song.previewUrl

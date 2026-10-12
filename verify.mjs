@@ -156,6 +156,38 @@ for (const [name, src] of [["itunes.html", html]]) {
   else warn("viewport-fit=cover missing, so safe-area insets resolve to 0")
 }
 
+/* ---------- 2d. era picker ---------- */
+
+head("2d. Era picker")
+
+{
+  const js = scriptForRules
+  const ERAS = [1980, 1990, 2000, 2010, 2020]
+  const decadeOf = s => (s.year ? Math.floor(s.year / 10) * 10 : null)
+
+  // Selecting eras must not strand the game with nothing to play.
+  const counts = {}
+  for (const d of ERAS) counts[d] = 0
+  let stray = 0
+  for (const s of songs) { const d = decadeOf(s); if (d !== null && d in counts) counts[d]++; else stray++ }
+
+  if (!stray) ok(`every track falls in a selectable era (${ERAS.map(d => counts[d]).join("/")})`)
+  else bad(`${stray} track(s) sit outside every era chip and could never be played`)
+
+  const emptyEra = ERAS.filter(d => !counts[d])
+  if (!emptyEra.length) ok("no era chip would show a count of zero")
+  else warn(`era chip(s) with no songs: ${emptyEra.join(", ")}`)
+
+  if (js.includes("if (!POOL.length) POOL = CATALOG.slice()")) ok("an empty selection falls back to the full catalog")
+  else bad("no fallback for an empty era selection")
+
+  if (js.includes("if (!POOL.some(s => s.trackId === target.trackId)) POOL = [target, ...POOL]")) ok("a challenge link outside the chosen eras is still guessable")
+  else bad("a shared challenge link outside the selected eras would be unguessable")
+
+  if (js.includes("localStorage.removeItem(BAG_KEY)")) ok("changing eras resets the shuffle bag")
+  else bad("stale shuffle bag would keep serving songs from the old selection")
+}
+
 /* ---------- 3. artwork upscaling ---------- */
 
 head('3. Artwork')
