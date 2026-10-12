@@ -2,6 +2,7 @@
 // Binds 0.0.0.0 so other devices on your LAN / tailnet can play.
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
+import { createSign } from 'node:crypto'
 import { join, extname, normalize } from 'node:path'
 import { networkInterfaces } from 'node:os'
 
@@ -22,9 +23,86 @@ const TYPES = {
   '.ico': 'image/x-icon',
 }
 
+/* ============================================================
+   Apple MusicKit developer token
+
+   MusicKit needs an ES256 JWT signed with a private key from the Apple
+   Developer Program. The key must never reach the browser, so it is signed
+   here and handed out as a short-lived token.
+
+   Configure via environment (see deploy/SETUP.md):
+     APPLE_TEAM_ID   10-character Team ID
+     APPLE_KEY_ID    10-character MusicKit Key ID
+     APPLE_P8_PATH   path to the AuthKey_XXXXXXXXXX.p8 file
+   ============================================================ */
+
+const APPLE = {
+  teamId: process.env.APPLE_TEAM_ID,
+  keyId: process.env.APPLE_KEY_ID,
+  p8Path: process.env.APPLE_P8_PATH,
+}
+
+const b64url = buf => Buffer.from(buf).toString('base64')
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+
+let cachedToken = null   // { token, exp }
+
+async function appleDeveloperToken() {
+  const now = Math.floor(Date.now() / 1000)
+  // Reuse until it is within an hour of expiry.
+  if (cachedToken && cachedToken.exp - now > 3600) return cachedToken.token
+
+  const pem = await readFile(APPLE.p8Path, 'utf8')
+  const header = { alg: 'ES256', kid: APPLE.keyId, typ: 'JWT' }
+  // Apple caps developer tokens at 180 days; 30 is plenty and limits exposure.
+  const exp = now + 30 * 24 * 60 * 60
+  const payload = { iss: APPLE.teamId, iat: now, exp }
+
+  const signingInput = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`
+  // JWT requires the raw r||s form, not DER.
+  const sig = createSign('SHA256').update(signingInput)
+    .sign({ key: pem, dsaEncoding: 'ieee-p1363' })
+
+  cachedToken = { token: `${signingInput}.${b64url(sig)}`, exp }
+  return cachedToken.token
+}
+
+function appleMissing() {
+  const missing = []
+  if (!APPLE.teamId) missing.push('APPLE_TEAM_ID')
+  if (!APPLE.keyId) missing.push('APPLE_KEY_ID')
+  if (!APPLE.p8Path) missing.push('APPLE_P8_PATH')
+  return missing
+}
+
 const server = createServer(async (req, res) => {
   try {
     let path = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname)
+
+    // Mint a MusicKit developer token. Returns 503 with the exact missing
+    // configuration until the Apple Developer key is in place.
+    if (path === '/apple-token') {
+      const missing = appleMissing()
+      const send = (code, obj) => res.writeHead(code, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      }).end(JSON.stringify(obj))
+
+      if (missing.length) {
+        send(503, {
+          error: 'not_configured',
+          missing,
+          hint: 'Set these in the songless service environment, then restart it.',
+        })
+        return
+      }
+      try {
+        send(200, { token: await appleDeveloperToken() })
+      } catch (err) {
+        send(500, { error: 'sign_failed', detail: err.message })
+      }
+      return
+    }
 
     // Clean routes. /callback MUST resolve to the Spotify page — that's where
     // Spotify sends the OAuth code, and the landing page can't handle it.
@@ -34,6 +112,7 @@ const server = createServer(async (req, res) => {
       '/callback': '/spotify.html',
       '/itunes': '/itunes.html',
       '/probe': '/probe.html',
+      '/apple': '/apple.html',
     }
     if (ROUTES[path]) path = ROUTES[path]
     else if (!extname(path)) path = '/index.html'

@@ -5,3 +5,7 @@ node_modules/
 
 # Local scratch
 smoke-seed.txt
+
+# Apple MusicKit private key — never commit
+.secrets/
+*.p8

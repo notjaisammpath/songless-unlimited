@@ -72,6 +72,11 @@
   }
   .icon.hits { background: rgba(240,180,41,.13); border: 1px solid rgba(240,180,41,.3); }
   .icon.sp { background: rgba(29,185,84,.12); border: 1px solid rgba(29,185,84,.3); }
+  .icon.am { background: rgba(250,45,72,.12); border: 1px solid rgba(250,45,72,.3); }
+
+  /* Not ready yet — dimmed, but still reachable so the flow can be tried. */
+  a.pick.soon { opacity: .6; }
+  a.pick.soon:active { opacity: .75; }
 
   .body { min-width: 0; flex: 1 1 auto; }
   .body h2 { margin: 0 0 3px; font-size: 1.02rem; font-weight: 800; letter-spacing: -0.015em; }
@@ -263,6 +268,15 @@
       <span class="body">
         <h2>My Spotify</h2>
         <p>Your library · Premium</p>
+      </span>
+      <span class="arrow" aria-hidden="true">→</span>
+    </a>
+
+    <a class="pick soon" href="/apple.html">
+      <span class="icon am" aria-hidden="true">🍎</span>
+      <span class="body">
+        <h2>Apple Music</h2>
+        <p>Your library · coming soon</p>
       </span>
       <span class="arrow" aria-hidden="true">→</span>
     </a>

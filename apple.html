@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Songless Unlimited</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8E%A4</text></svg>">
+<link rel="stylesheet" href="game.css">
+<style>
+  /* Apple Music red, in place of the Spotify green. */
+  .badge { color: #fa2d48; background: rgba(250,45,72,.1); border-color: rgba(250,45,72,.3); }
+
+  .soon {
+    text-align: center;
+  }
+  .soon .glyph { font-size: 2.6rem; line-height: 1; margin-bottom: 12px; }
+  .soon h2 { margin: 0 0 10px; font-size: 1.1rem; }
+  .soon p { color: var(--dim); font-size: 0.87rem; line-height: 1.6; margin: 0 0 14px; }
+  .soon code {
+    font-family: var(--mono); font-size: 0.82em;
+    background: rgba(255,255,255,.06); padding: 2px 5px; border-radius: 4px;
+  }
+
+  .steps { text-align: left; display: grid; gap: 9px; margin: 0 0 16px; }
+  .step {
+    display: flex; gap: 10px; align-items: flex-start;
+    font-size: 0.82rem; color: var(--dim); line-height: 1.5;
+  }
+  .step .num {
+    flex: 0 0 auto; width: 19px; height: 19px; border-radius: 50%;
+    background: rgba(255,255,255,.06); color: var(--text);
+    display: grid; place-items: center; font-size: 0.68rem; font-weight: 800;
+  }
+  .step.done .num { background: var(--green); color: #07210f; }
+  .step.done { color: var(--dimmer); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><a href="/" class="home">Songless <span class="mark">Unlimited</span></a></h1>
+    <div class="badge">● Apple Music</div>
+    <div class="toolbar">
+      <button class="btn-sm" id="btn-stats">Stats</button>
+      <button class="btn-sm" id="btn-how">How to play</button>
+      <button class="btn-sm" id="btn-settings">Settings</button>
+    </div>
+  </header>
+
+  <div id="app"><div class="loading">Starting…</div></div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="inner">
+    <div id="modal-body"></div>
+    <button class="btn-wide" id="modal-close" style="margin-top:16px">Close</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="apple.js"></script>
+</body>
+</html>

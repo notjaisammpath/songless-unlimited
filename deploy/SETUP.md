@@ -87,3 +87,55 @@ cd ~/songless-unlimited && git pull && sudo systemctl restart songless
 | `INVALID_CLIENT: Invalid redirect URI` | the hosted `/callback` isn't registered in the dashboard |
 | Spotify auth works, playback silent | Spotify is playing on another device, or the account isn't Premium |
 | `Cannot GET /callback` | Pi is running an old `serve.mjs` without the extensionless-route fallback |
+
+## Apple Music (optional)
+
+Apple Music mode is gated behind a "coming soon" screen until a developer key
+exists. Append `?dev=1` to `/apple` to bypass the gate and run the real flow.
+
+### What's required
+
+1. **Apple Developer Program membership** (paid, $99/year). There is no free
+   tier for MusicKit — the API returns `401` without a signed developer token.
+2. A **MusicKit key**: Developer portal → Certificates, Identifiers & Profiles →
+   Keys → **+** → tick *MusicKit* → download `AuthKey_XXXXXXXXXX.p8`. It can
+   only be downloaded once. Note the **Key ID** and your **Team ID**.
+3. An **Apple Music subscription** on whichever account plays.
+
+### Installing the key
+
+```bash
+mkdir -p ~/songless-unlimited/.secrets
+chmod 700 ~/songless-unlimited/.secrets
+# copy AuthKey_XXXXXXXXXX.p8 into it, then:
+chmod 600 ~/songless-unlimited/.secrets/AuthKey_*.p8
+```
+
+`.secrets/` and `*.p8` are gitignored. The key never leaves the Pi — the server
+signs short-lived tokens from it and only the token reaches the browser.
+
+Add to `/etc/systemd/system/songless.service` under `[Service]`:
+
+```ini
+Environment=APPLE_TEAM_ID=XXXXXXXXXX
+Environment=APPLE_KEY_ID=YYYYYYYYYY
+Environment=APPLE_P8_PATH=/home/jai/songless-unlimited/.secrets/AuthKey_YYYYYYYYYY.p8
+```
+
+Then:
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart songless
+curl -s http://127.0.0.1:3000/apple-token | head -c 80
+```
+
+A JSON object containing `token` means it works. `not_configured` lists exactly
+which variables are still missing.
+
+### Notes
+
+- Tokens are signed ES256 with Node's built-in crypto — no dependencies — and
+  cached for 30 days (Apple's ceiling is 180).
+- `ProtectHome=read-only` in the unit still allows reading the key.
+- Unlike Spotify, Apple has no 25-user development cap, so any subscriber can
+  play once the key is in place.
