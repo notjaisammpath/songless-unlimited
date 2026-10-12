@@ -1247,7 +1247,6 @@ const HOW_HTML = `
 
 function afterCatalog() {
   for (const s of CATALOG) s._search = `${norm(s.artist)} ${norm(s.title)}`
-  $('foot').innerHTML = `${CATALOG.length} songs from your Spotify · clips start at the first audible moment`
   newRound()
 }
 
