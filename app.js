@@ -236,6 +236,8 @@ async function api(path, opts = {}) {
    Catalog — built from what you actually listen to
    ============================================================ */
 
+const ids_of = t => (t.artists || []).map(a => a.id).filter(Boolean)
+
 async function buildCatalog(includeAllGenres = false) {
   const progress = m => { const el = $('build-status'); if (el) el.textContent = m }
 
@@ -266,39 +268,58 @@ async function buildCatalog(includeAllGenres = false) {
   const genreOf = new Map()
   let genresBlocked = false
 
-  // Chunks of 20 rather than 50: shorter URLs, and a single rejected chunk
-  // costs less progress.
-  for (let i = 0; i < artistIds.length; i += 20) {
-    if (genresBlocked) break
+  // Try the batch endpoint first. Development Mode bars it for some apps, but
+  // the single-artist endpoint often still works, so fall back to that rather
+  // than giving up on genre data entirely.
+  let batchWorks = true
+
+  for (let i = 0; i < artistIds.length && batchWorks; i += 20) {
     progress(`Checking genres… (${i}/${artistIds.length} artists)`)
-    const chunk = artistIds.slice(i, i + 20)
     try {
-      const r = await api(`/artists?ids=${chunk.join(',')}`)
+      const r = await api(`/artists?ids=${artistIds.slice(i, i + 20).join(',')}`)
       for (const a of r?.artists || []) if (a?.id) genreOf.set(a.id, a.genres || [])
     } catch (err) {
-      if (err.status === 403 || err.status === 404) {
-        // Probe the single-artist endpoint — sometimes only the batch form is barred.
-        try {
-          const one = await api(`/artists/${chunk[0]}`)
-          if (one?.id) { genreOf.set(one.id, one.genres || []); continue }
-        } catch {}
-        genresBlocked = true
-        console.warn('Artist genre lookup unavailable for this app; skipping the genre filter.', err.message)
-      } else {
-        throw err
+      if (err.status !== 403 && err.status !== 404) throw err
+      batchWorks = false
+      console.warn('Batch /artists is barred for this app; falling back to single lookups.')
+    }
+  }
+
+  if (!batchWorks) {
+    // One request per artist. Slower, but it yields the real genre tags.
+    for (const [n, id] of artistIds.entries()) {
+      if (genreOf.has(id)) continue
+      if (n % 5 === 0) progress(`Checking genres one by one… (${n}/${artistIds.length})`)
+      try {
+        const a = await api(`/artists/${id}`)
+        if (a?.id) genreOf.set(a.id, a.genres || [])
+      } catch (err) {
+        if (err.status === 403 || err.status === 404) {
+          console.warn('Single /artists is barred too; genre data unavailable.')
+          break
+        }
+        // A one-off failure shouldn't abandon the remaining artists.
       }
     }
   }
 
-  // With no genre data there is nothing to filter on, so keep everything
-  // rather than returning an empty catalog.
+  // Only claim the filter is unusable when coverage is genuinely too thin to
+  // judge by. Filtering on mostly-missing data is what produced an empty
+  // catalog before.
+  const coverage = artistIds.length ? genreOf.size / artistIds.length : 0
+  genresBlocked = coverage < 0.5
+  console.log(`genre coverage: ${genreOf.size}/${artistIds.length} artists (${Math.round(coverage * 100)}%)`)
+
   const effectiveFilter = genresBlocked ? false : !includeAllGenres
 
   const out = []
   for (const t of tracks.values()) {
-    const genres = (t.artists || []).flatMap(a => genreOf.get(a.id) || [])
+    const ids = (t.artists || []).map(a => a.id).filter(Boolean)
+    const judgeable = ids.some(id => genreOf.has(id))
+    const genres = ids.flatMap(id => genreOf.get(id) || [])
     const isRap = genres.some(g => RAP_RE.test(g))
-    if (effectiveFilter && !isRap) continue
+    // Drop a track only when we actually know its genres and none qualify.
+    if (effectiveFilter && judgeable && !isRap) continue
     if (t.is_local) continue
     if (!t.uri) continue
 
@@ -323,7 +344,34 @@ async function buildCatalog(includeAllGenres = false) {
     if (!bySong.has(k)) bySong.set(k, s)
   }
 
-  const catalog = [...bySong.values()]
+  let catalog = [...bySong.values()]
+
+  // If filtering wiped out essentially everything, the genre data was wrong or
+  // absent rather than the library being empty — keep the tracks instead.
+  if (catalog.length < 10 && tracks.size >= 20 && effectiveFilter) {
+    console.warn('Genre filter emptied the catalog; keeping all scanned tracks.')
+    const all = new Map()
+    for (const t of tracks.values()) {
+      if (t.is_local || !t.uri) continue
+      const k = `${norm(t.artists?.[0]?.name || '')}::${norm(t.name)}`
+      if (all.has(k)) continue
+      all.set(k, {
+        id: t.id,
+        uri: t.uri,
+        title: t.name,
+        artist: (t.artists || []).map(a => a.name).join(', '),
+        primaryArtist: t.artists?.[0]?.name || '',
+        album: t.album?.name || '',
+        artworkUrl: t.album?.images?.[0]?.url || '',
+        year: Number(String(t.album?.release_date || '').slice(0, 4)) || undefined,
+        durationMs: t.duration_ms,
+        genres: [...new Set(ids_of(t).flatMap(id => genreOf.get(id) || []))].slice(0, 4),
+      })
+    }
+    catalog = [...all.values()]
+    genresBlocked = true
+  }
+
   lsSet(K_CATALOG, {
     builtAt: Date.now(),
     includeAllGenres,
