@@ -36,12 +36,10 @@ const SCOPES = [
   'user-library-read',
   'user-modify-playback-state',
   'user-read-playback-state',
-  // Playlists are usually the largest source of tracks; recently-played adds
-  // whatever is in rotation right now. Both need their own scope.
-  'playlist-read-private',
-  'playlist-read-collaborative',
+  // Recently played adds whatever is in rotation right now. Playlist scopes
+  // are not requested: /playlists/{id}/tracks is 403 for this app, so the
+  // listing alone yields nothing.
   'user-read-recently-played',
-  'user-follow-read',
 ].join(' ')
 
 // Bump when SCOPES changes: a token minted under the old set silently 403s on
@@ -83,9 +81,7 @@ let priming = null   // in-flight prepareTrack(), so plays can wait it out
 // Priming plays the track muted to buffer it. Doing that before the user has
 // interacted means page load alone starts audio, so it waits for a gesture.
 let gestured = false
-let analysisBlocked = false
-let startMs = 0            // where the current track's audible part begins
-const onsetCache = {}      // trackId -> ms, per session
+let startMs = 0            // clip start; /audio-analysis is barred, so always 0
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -284,10 +280,17 @@ async function buildCatalog() {
 
   const tracks = new Map()
 
-  const MAX_TRACKS = 2000
+  const MAX_TRACKS = 3000
+  // Full album tracklists bring along skits, intros and interludes. They make
+  // terrible guesses, and runtime plus the obvious names catch most of them.
+  const FILLER = /\b(intro|outro|skit|interlude|prelude|reprise|commentary|voicemail)\b/i
+  let skipped = 0
+
   const add = t => {
     if (!t || t.type === 'episode' || !t.id || t.is_local) return
     if (tracks.size >= MAX_TRACKS) return
+    if (t.duration_ms && t.duration_ms < 75000) { skipped++; return }
+    if (FILLER.test(t.name || '')) { skipped++; return }
     tracks.set(t.id, t)
   }
 
@@ -326,57 +329,8 @@ async function buildCatalog() {
     console.warn('recently-played unavailable:', err.message)
   }
 
-  // Playlists — usually the biggest source by far.
-  try {
-    const playlists = []
-    for (let page = 0; page < 10; page++) {
-      const r = await api(`/me/playlists?limit=50&offset=${page * 50}`)
-      const items = r?.items || []
-      playlists.push(...items.filter(Boolean))
-      if (items.length < 50) break
-    }
-
-    let done = 0
-    let barred = false
-
-    for (const pl of playlists) {
-      if (barred || tracks.size >= MAX_TRACKS) break
-      done++
-      progress(`Reading playlists… (${done}/${playlists.length} · ${tracks.size} found)`)
-
-      for (let page = 0; page < 10; page++) {
-        let r
-        try {
-          r = await api(`/playlists/${pl.id}/tracks?limit=100&offset=${page * 100}`)
-        } catch (err) {
-          if (err.status === 403) {
-            // Reading playlist contents is barred for this app. One 403 means
-            // all of them will fail, so stop instead of firing a request per
-            // playlist and filling the console with identical errors.
-            barred = true
-            console.warn(
-              `playlist contents are barred for this app (403) — skipping all ${playlists.length} playlists. `
-              + 'This is a Development Mode restriction, same as /artists and /audio-analysis.')
-          } else {
-            console.warn(`playlist "${pl.name}" unreadable:`, err.message)
-          }
-          break
-        }
-        const items = r?.items || []
-        for (const it of items) add(it?.track)
-        if (items.length < 100 || tracks.size >= MAX_TRACKS) break
-      }
-    }
-
-    console.log(barred
-      ? `found ${playlists.length} playlists but could not read any of them`
-      : `scanned ${done} of ${playlists.length} playlists`)
-  } catch (err) {
-    console.warn('playlists unavailable:', err.message)
-  }
-
-  // Saved albums. People who save whole albums rather than tracks have most of
-  // their library here, and it is invisible to /me/tracks.
+  // Saved albums — by far the largest source for an album-based library, and
+  // completely invisible to /me/tracks.
   try {
     for (let page = 0; page < 10; page++) {
       if (tracks.size >= MAX_TRACKS) break
@@ -398,71 +352,10 @@ async function buildCatalog() {
     console.warn('saved albums unavailable:', err.message)
   }
 
-  // Artists you follow feed the expansion below even if none of their tracks
-  // are saved yet.
-  const followed = []
-  try {
-    let after = null
-    for (let page = 0; page < 4; page++) {
-      const q = after ? `&after=${encodeURIComponent(after)}` : ''
-      const r = await api(`/me/following?type=artist&limit=50${q}`)
-      const items = r?.artists?.items || []
-      for (const a of items) if (a?.id) followed.push(a.id)
-      after = r?.artists?.cursors?.next
-      if (!after || items.length < 50) break
-    }
-    console.log(`following ${followed.length} artists`)
-  } catch (err) {
-    console.warn('followed artists unavailable:', err.message)
-  }
-
-  // The big one: pull each artist's top tracks. Single-artist endpoints are not
-  // barred for this app even though the batch form is, and this stays personal
-  // because the artists come from your own library and follows.
-  try {
-    const freq = new Map()
-    for (const t of tracks.values()) {
-      for (const a of t.artists || []) {
-        if (a?.id) freq.set(a.id, (freq.get(a.id) || 0) + 1)
-      }
-    }
-    for (const id of followed) freq.set(id, (freq.get(id) || 0) + 3)
-
-    const ranked = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
-    const ARTIST_CAP = 120
-    const targets = ranked.slice(0, ARTIST_CAP)
-
-    if (ranked.length > ARTIST_CAP) {
-      console.warn(`expanding only the top ${ARTIST_CAP} of ${ranked.length} artists`)
-    }
-
-    let done = 0
-    for (const id of targets) {
-      if (tracks.size >= MAX_TRACKS) break
-      done++
-      if (done % 5 === 1) progress(`Adding more by your artists… (${done}/${targets.length} · ${tracks.size} found)`)
-      try {
-        // market is optional with a user token but some accounts 400 without
-        // it, so pass the profile country when we know it.
-        const mk = profile?.country ? `?market=${profile.country}` : ""
-        const r = await api(`/artists/${id}/top-tracks${mk}`)
-        for (const t of r?.tracks || []) add(t)
-      } catch (err) {
-        if (err.status === 403 || err.status === 404) {
-          console.warn('artist top-tracks is barred for this app; stopping expansion.')
-          break
-        }
-      }
-    }
-    console.log(`expanded ${done} artists`)
-  } catch (err) {
-    console.warn('artist expansion failed:', err.message)
-  }
-
   if (tracks.size >= MAX_TRACKS) {
     console.warn(`hit the ${MAX_TRACKS}-track scan cap — some sources were not fully read`)
   }
-  console.log(`scanned ${tracks.size} tracks total`)
+  console.log(`scanned ${tracks.size} tracks total (${skipped} skits/short tracks skipped)`)
 
   if (!tracks.size) throw new Error('Spotify returned no tracks for your account.')
 
@@ -603,44 +496,6 @@ function setIcon(playing) {
  * transition, and a swallowed rejection previously let muted priming playback
  * continue and then get un-muted. Returns true only when state says paused.
  */
-/**
- * Where the audible music actually begins. Many tracks open with a fade-in or
- * near-silence, so a 0.1s clip taken from literal 0:00 can contain nothing.
- *
- * /audio-analysis is on Spotify's deprecation list for new apps, so this is
- * best-effort: a 403 disables it permanently for the session and clips fall
- * back to starting at 0:00.
- */
-async function onsetMsFor(track) {
-  if (!track || analysisBlocked) return 0
-  if (onsetCache[track.id] !== undefined) return onsetCache[track.id]
-
-  try {
-    const a = await api(`/audio-analysis/${track.id}`)
-
-    let ms = 0
-    const fadeIn = a?.track?.end_of_fade_in
-    if (typeof fadeIn === 'number' && fadeIn > 0) ms = Math.round(fadeIn * 1000)
-
-    // Otherwise take the first segment that is meaningfully above silence.
-    if (!ms && Array.isArray(a?.segments)) {
-      const seg = a.segments.find(x => (x.loudness_max ?? -60) > -35)
-      if (seg) ms = Math.round((seg.start || 0) * 1000)
-    }
-
-    // Never skip so far that we lose the intro entirely.
-    onsetCache[track.id] = Math.max(0, Math.min(ms, 4000))
-    if (onsetCache[track.id]) console.log(`onset for "${track.title}": ${onsetCache[track.id]}ms`)
-    return onsetCache[track.id]
-  } catch (err) {
-    if (err.status === 403 || err.status === 404) {
-      analysisBlocked = true
-      console.warn('audio-analysis unavailable for this app — clips will start at 0:00.')
-    }
-    return 0
-  }
-}
-
 async function forceStop(maxMs = 4000) {
   const deadline = Date.now() + maxMs
   while (Date.now() < deadline) {
@@ -1044,8 +899,8 @@ function renderThin(n, scanned) {
       <div class="err">
         <b>Only ${n} playable track${n === 1 ? '' : 's'} found</b><br>
         Spotify returned ${scanned} song${scanned === 1 ? '' : 's'} across your top tracks,
-        saved library, recently played and playlists. If that seems low, your
-        account may have little saved yet.
+        saved library, saved albums and recently played. If that seems low,
+        your account may have little saved yet.
       </div>
       <button class="btn-wide btn-primary" id="btn-retry">Rescan</button>
     </div>`
@@ -1270,10 +1125,7 @@ function newRound() {
   render()
 
   // Resolve the onset first so priming buffers the right position.
-  onsetMsFor(song).then(ms => {
-    startMs = ms
-    prepareTrack()
-  })
+  prepareTrack()
 }
 
 function share() {
@@ -1320,7 +1172,7 @@ function settingsHtml() {
     <h2>Settings</h2>
     <p class="note" style="text-align:left">
       ${CATALOG.length} songs, collapsed from ${c?.scanned ?? CATALOG.length} scanned across your
-      top tracks, saved library, recently played and playlists.
+      top tracks, saved library, saved albums and recently played.
     </p>
     <button class="btn-wide" id="s-rebuild">Rebuild catalog from Spotify</button>
     <button class="btn-wide" id="s-logout" style="margin-top:8px">Disconnect Spotify</button>
@@ -1346,7 +1198,7 @@ const HOW_HTML = `
   </p>
   <p style="font-size:.88rem;line-height:1.65;color:var(--dim)">
     Every song comes from your own Spotify — top tracks, saved library, recently
-    played and playlists. Playback runs through the Web Playback SDK, so
+    played and saved albums. Playback runs through the Web Playback SDK, so
     Spotify must not be playing on another device at the same time.
   </p>
 `

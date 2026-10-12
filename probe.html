@@ -242,7 +242,8 @@ async function run() {
     `playlists:       ${lists?.total ?? '?'}`,
   ].join('\n')
   g.appendChild(el('pre', null, esc(totals)))
-  lines.push('', 'LIBRARY SIZE', totals.split('\n').map(l => '  ' + l).join('\n'))
+  // group() already pushed the heading — don't repeat it.
+  lines.push(totals.split('\n').map(l => '  ' + l).join('\n'))
 
   const copy = el('button', null, 'Copy results')
   copy.onclick = () => {
