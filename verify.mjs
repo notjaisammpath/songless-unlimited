@@ -274,9 +274,11 @@ if (!appjs) {
   if (guardsRace) ok("transport races are not mistaken for DRM failures")
   else warn("a transport race may escalate to the DRM screen")
 
-  appjs.includes('judgeable')
-    ? ok('genre filter is fail-open (missing data never drops a track)')
-    : bad('genre filter can drop tracks whose genres are unknown')
+  // Look for a real call site, not the word in a comment or log message.
+  const artistCallSite = 'api(`/artists'
+  const noGenreFilter = !appjs.includes('RAP_RE') && !appjs.includes(artistCallSite)
+  if (noGenreFilter) ok("no genre filtering (every scanned track is kept)")
+  else bad("genre filtering code is still present")
 
   const gated = appjs.includes("if (!gestured) return")
   if (gated) ok("priming waits for a user gesture (page load cannot autoplay)")

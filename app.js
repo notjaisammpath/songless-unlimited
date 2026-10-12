@@ -47,9 +47,6 @@ const SCOPES = [
 // the new endpoints, so the stored token must be discarded and re-consented.
 const SCOPE_VERSION = 2
 
-// Artist genres that count as hip-hop for catalog filtering.
-const RAP_RE = /hip hop|hip-hop|\brap\b|trap|drill|grime|crunk|hyphy|bounce|phonk/i
-
 /* ---------------- state ---------------- */
 
 let CATALOG = []
@@ -266,9 +263,7 @@ async function api(path, opts = {}) {
    Catalog — built from what you actually listen to
    ============================================================ */
 
-const ids_of = t => (t.artists || []).map(a => a.id).filter(Boolean)
-
-async function buildCatalog(includeAllGenres = false) {
+async function buildCatalog() {
   const progress = m => { const el = $('build-status'); if (el) el.textContent = m }
 
   const tracks = new Map()
@@ -316,16 +311,29 @@ async function buildCatalog(includeAllGenres = false) {
     }
 
     let done = 0
+    let barred = false
+
     for (const pl of playlists) {
-      if (tracks.size >= MAX_TRACKS) break
+      if (barred || tracks.size >= MAX_TRACKS) break
       done++
       progress(`Reading playlists… (${done}/${playlists.length} · ${tracks.size} found)`)
+
       for (let page = 0; page < 10; page++) {
         let r
         try {
           r = await api(`/playlists/${pl.id}/tracks?limit=100&offset=${page * 100}`)
         } catch (err) {
-          console.warn(`playlist "${pl.name}" unreadable:`, err.message)
+          if (err.status === 403) {
+            // Reading playlist contents is barred for this app. One 403 means
+            // all of them will fail, so stop instead of firing a request per
+            // playlist and filling the console with identical errors.
+            barred = true
+            console.warn(
+              `playlist contents are barred for this app (403) — skipping all ${playlists.length} playlists. `
+              + 'This is a Development Mode restriction, same as /artists and /audio-analysis.')
+          } else {
+            console.warn(`playlist "${pl.name}" unreadable:`, err.message)
+          }
           break
         }
         const items = r?.items || []
@@ -333,7 +341,10 @@ async function buildCatalog(includeAllGenres = false) {
         if (items.length < 100 || tracks.size >= MAX_TRACKS) break
       }
     }
-    console.log(`scanned ${playlists.length} playlists`)
+
+    console.log(barred
+      ? `found ${playlists.length} playlists but could not read any of them`
+      : `scanned ${done} of ${playlists.length} playlists`)
   } catch (err) {
     console.warn('playlists unavailable:', err.message)
   }
@@ -344,80 +355,9 @@ async function buildCatalog(includeAllGenres = false) {
 
   if (!tracks.size) throw new Error('Spotify returned no tracks for your account.')
 
-  // Artist genres are the only genre signal left to new apps (audio-features is
-  // deprecated). But /artists itself 403s for apps stuck in Development Mode,
-  // so treat it as best-effort enrichment and never let it abort the build.
-  const artistIds = [...new Set([...tracks.values()].flatMap(t => (t.artists || []).map(a => a.id)).filter(Boolean))]
-  const genreOf = new Map()
-  let genresBlocked = false
-
-  // Try the batch endpoint first. Development Mode bars it for some apps, but
-  // the single-artist endpoint often still works, so fall back to that rather
-  // than giving up on genre data entirely.
-  let batchWorks = true
-
-  for (let i = 0; i < artistIds.length && batchWorks; i += 20) {
-    progress(`Checking genres… (${i}/${artistIds.length} artists)`)
-    try {
-      const r = await api(`/artists?ids=${artistIds.slice(i, i + 20).join(',')}`)
-      for (const a of r?.artists || []) if (a?.id) genreOf.set(a.id, a.genres || [])
-    } catch (err) {
-      if (err.status !== 403 && err.status !== 404) throw err
-      batchWorks = false
-      console.warn('Batch /artists is barred for this app; falling back to single lookups.')
-    }
-  }
-
-  if (!batchWorks) {
-    // One request per artist, so cap it — a 1000-artist library would
-    // otherwise take minutes. Uncovered artists stay unknown, and the
-    // fail-open filter keeps their tracks rather than dropping them.
-    const LOOKUP_CAP = 400
-    let looked = 0
-
-    for (const [n, id] of artistIds.entries()) {
-      if (genreOf.has(id)) continue
-      if (looked >= LOOKUP_CAP) {
-        console.warn(`genre lookup cap reached: ${artistIds.length - n} artists left unchecked (their tracks are kept)`)
-        break
-      }
-      if (looked % 10 === 0) progress(`Checking genres one by one… (${looked}/${Math.min(artistIds.length, LOOKUP_CAP)})`)
-      looked++
-      try {
-        const a = await api(`/artists/${id}`)
-        if (a?.id) genreOf.set(a.id, a.genres || [])
-      } catch (err) {
-        if (err.status === 403 || err.status === 404) {
-          console.warn('Single /artists is barred too; genre data unavailable.')
-          break
-        }
-        // A one-off failure shouldn't abandon the remaining artists.
-      }
-    }
-  }
-
-  // Only claim the filter is unusable when coverage is genuinely too thin to
-  // judge by. Filtering on mostly-missing data is what produced an empty
-  // catalog before.
-  // Capped lookups mean coverage can be low even when the data we DID get is
-  // good, so this only decides whether to advertise the filter as unusable.
-  const coverage = artistIds.length ? genreOf.size / artistIds.length : 0
-  genresBlocked = coverage < 0.5
-  console.log(`genre coverage: ${genreOf.size}/${artistIds.length} artists (${Math.round(coverage * 100)}%)`)
-
-  const effectiveFilter = genresBlocked ? false : !includeAllGenres
-
   const out = []
   for (const t of tracks.values()) {
-    const ids = (t.artists || []).map(a => a.id).filter(Boolean)
-    const judgeable = ids.some(id => genreOf.has(id))
-    const genres = ids.flatMap(id => genreOf.get(id) || [])
-    const isRap = genres.some(g => RAP_RE.test(g))
-    // Drop a track only when we actually know its genres and none qualify.
-    if (effectiveFilter && judgeable && !isRap) continue
-    if (t.is_local) continue
-    if (!t.uri) continue
-
+    if (t.is_local || !t.uri) continue
     out.push({
       id: t.id,
       uri: t.uri,
@@ -428,7 +368,6 @@ async function buildCatalog(includeAllGenres = false) {
       artworkUrl: t.album?.images?.[0]?.url || '',
       year: Number(String(t.album?.release_date || '').slice(0, 4)) || undefined,
       durationMs: t.duration_ms,
-      genres: [...new Set(genres)].slice(0, 4),
     })
   }
 
@@ -439,41 +378,9 @@ async function buildCatalog(includeAllGenres = false) {
     if (!bySong.has(k)) bySong.set(k, s)
   }
 
-  let catalog = [...bySong.values()]
+  const catalog = [...bySong.values()]
 
-  // If filtering wiped out essentially everything, the genre data was wrong or
-  // absent rather than the library being empty — keep the tracks instead.
-  if (catalog.length < 10 && tracks.size >= 20 && effectiveFilter) {
-    console.warn('Genre filter emptied the catalog; keeping all scanned tracks.')
-    const all = new Map()
-    for (const t of tracks.values()) {
-      if (t.is_local || !t.uri) continue
-      const k = `${norm(t.artists?.[0]?.name || '')}::${norm(t.name)}`
-      if (all.has(k)) continue
-      all.set(k, {
-        id: t.id,
-        uri: t.uri,
-        title: t.name,
-        artist: (t.artists || []).map(a => a.name).join(', '),
-        primaryArtist: t.artists?.[0]?.name || '',
-        album: t.album?.name || '',
-        artworkUrl: t.album?.images?.[0]?.url || '',
-        year: Number(String(t.album?.release_date || '').slice(0, 4)) || undefined,
-        durationMs: t.duration_ms,
-        genres: [...new Set(ids_of(t).flatMap(id => genreOf.get(id) || []))].slice(0, 4),
-      })
-    }
-    catalog = [...all.values()]
-    genresBlocked = true
-  }
-
-  lsSet(K_CATALOG, {
-    builtAt: Date.now(),
-    includeAllGenres,
-    genresBlocked,
-    songs: catalog,
-    scanned: tracks.size,
-  })
+  lsSet(K_CATALOG, { builtAt: Date.now(), songs: catalog, scanned: tracks.size })
   return catalog
 }
 
@@ -975,15 +882,17 @@ function renderThin(n, scanned) {
   $('app').innerHTML = `
     <div class="card">
       <div class="err">
-        <b>Only ${n} hip-hop track${n === 1 ? '' : 's'} found</b><br>
-        I scanned ${scanned} songs from your top tracks and saved library, but few were
-        tagged hip-hop/rap by Spotify's artist genres.
+        <b>Only ${n} playable track${n === 1 ? '' : 's'} found</b><br>
+        Spotify returned ${scanned} song${scanned === 1 ? '' : 's'} across your top tracks,
+        saved library, recently played and playlists. If that seems low, your
+        account may have little saved yet.
       </div>
-      <button class="btn-wide btn-primary" id="btn-all">Use all my music instead</button>
-      <button class="btn-wide" id="btn-retry" style="margin-top:8px">Rescan</button>
+      <button class="btn-wide btn-primary" id="btn-retry">Rescan</button>
     </div>`
-  $('btn-all').onclick = async () => { renderBuilding(); CATALOG = await buildCatalog(true); afterCatalog() }
-  $('btn-retry').onclick = async () => { renderBuilding(); CATALOG = await buildCatalog(false); afterCatalog() }
+  $('btn-retry').onclick = async () => {
+    renderBuilding()
+    try { CATALOG = await buildCatalog(); afterCatalog() } catch (e) { fatal(e.message) }
+  }
 }
 
 /* ============================================================
@@ -1069,7 +978,6 @@ function renderReveal() {
       <div class="ttl">${esc(song.title)}</div>
       <div class="art-name">${esc(song.artist)}</div>
       <div class="alb">${esc(song.album)}${song.year ? ` · ${song.year}` : ''}</div>
-      ${song.genres?.length ? `<div class="note" style="margin-top:6px">${esc(song.genres.join(' · '))}</div>` : ''}
       <div class="actions" style="margin-top:16px">
         <button id="btn-full"><span id="full-ic">▶</span> Full track</button>
         <button id="btn-share">Share</button>
@@ -1243,32 +1151,19 @@ function settingsHtml() {
   return `
     <h2>Settings</h2>
     <p class="note" style="text-align:left">
-      ${CATALOG.length} songs in your catalog${c?.scanned ? `, filtered from ${c.scanned} scanned` : ''}.
-      ${c?.genresBlocked
-        ? 'Spotify returned <b>403 Forbidden</b> for the artist-genre lookup, which happens when an app is '
-          + 'still in Development Mode. Without genre data there is nothing to filter on, so <b>everything</b> '
-          + 'is included. Requesting Extended Quota Mode in the Spotify dashboard would restore it.'
-        : (c?.includeAllGenres ? 'Currently using <b>all genres</b>.' : 'Currently <b>hip-hop/rap only</b>.')}
+      ${CATALOG.length} songs, collapsed from ${c?.scanned ?? CATALOG.length} scanned across your
+      top tracks, saved library, recently played and playlists.
     </p>
     <button class="btn-wide" id="s-rebuild">Rebuild catalog from Spotify</button>
-    <button class="btn-wide" id="s-toggle" style="margin-top:8px">
-      ${c?.includeAllGenres ? 'Switch to hip-hop only' : 'Include all genres'}
-    </button>
     <button class="btn-wide" id="s-logout" style="margin-top:8px">Disconnect Spotify</button>
   `
 }
 
 function wireSettings() {
-  const c = lsGet(K_CATALOG)
   $('s-rebuild').onclick = async () => {
     $('modal').hidden = true
     renderBuilding()
-    try { CATALOG = await buildCatalog(!!c?.includeAllGenres); afterCatalog() } catch (e) { fatal(e.message) }
-  }
-  $('s-toggle').onclick = async () => {
-    $('modal').hidden = true
-    renderBuilding()
-    try { CATALOG = await buildCatalog(!c?.includeAllGenres); afterCatalog() } catch (e) { fatal(e.message) }
+    try { CATALOG = await buildCatalog(); afterCatalog() } catch (e) { fatal(e.message) }
   }
   $('s-logout').onclick = logout
 }
@@ -1282,8 +1177,8 @@ const HOW_HTML = `
     <b style="color:var(--gold)">${STAGES.map(fmt).join('s → ')}s</b>.
   </p>
   <p style="font-size:.88rem;line-height:1.65;color:var(--dim)">
-    Every song comes from your own Spotify — top tracks and saved library,
-    filtered to hip-hop/rap. Playback runs through the Web Playback SDK, so
+    Every song comes from your own Spotify — top tracks, saved library, recently
+    played and playlists. Playback runs through the Web Playback SDK, so
     Spotify must not be playing on another device at the same time.
   </p>
 `
@@ -1294,12 +1189,7 @@ const HOW_HTML = `
 
 function afterCatalog() {
   for (const s of CATALOG) s._search = `${norm(s.artist)} ${norm(s.title)}`
-  const meta = lsGet(K_CATALOG) || {}
-  $('foot').innerHTML = `${CATALOG.length} songs from your Spotify · clips start at 0:00`
-    + (meta.genresBlocked
-      ? '<br><span style="color:var(--amber)">Spotify blocked the genre lookup for this app, '
-        + 'so every saved song is included — not just hip-hop.</span>'
-      : '')
+  $('foot').innerHTML = `${CATALOG.length} songs from your Spotify · clips start at the first audible moment`
   newRound()
 }
 
@@ -1385,9 +1275,9 @@ async function boot() {
     if (cached?.songs?.length) {
       CATALOG = cached.songs
     } else {
-      bootPhase = 'building your catalog from top tracks and saved songs'
-      CATALOG = await buildCatalog(false)
-      if (CATALOG.length < 20) { renderThin(CATALOG.length, cached?.scanned || 0); return }
+      bootPhase = 'building your catalog from your Spotify library'
+      CATALOG = await buildCatalog()
+      if (CATALOG.length < 5) { renderThin(CATALOG.length, lsGet(K_CATALOG)?.scanned || 0); return }
     }
 
     afterCatalog()
