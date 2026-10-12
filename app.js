@@ -63,6 +63,7 @@ let playerReady = false
 let gen = 0
 let pollId = null
 let cutId = null
+let safetyId = null   // unconditional stop, armed before playback begins
 let isPlaying = false
 let profile = null
 let bootPhase = 'starting up'
@@ -456,6 +457,8 @@ function stopPolling() {
   pollId = null
   if (cutId) clearTimeout(cutId)
   cutId = null
+  if (safetyId) clearTimeout(safetyId)
+  safetyId = null
 }
 
 async function hardStop() {
@@ -595,6 +598,30 @@ async function playClip(seconds) {
   const my = ++gen
   stopPolling()
 
+  const limit = seconds * 1000
+
+  const cut = async () => {
+    if (my !== gen) return
+    stopPolling()
+    isPlaying = false
+    try { await player.pause() } catch {}
+    // Park back at the start so the next, longer clip is also primed.
+    try { await player.seek(startMs); prepared = true } catch { prepared = false }
+    setIcon(false)
+    const bar = document.querySelector('.played')
+    if (bar) bar.style.width = '0%'
+  }
+
+  // Arm an unconditional stop BEFORE playback starts. The precise cut depends
+  // on the SDK reporting a position; if that never arrives there would
+  // otherwise be nothing to stop the track and it would play to the end.
+  // cut must already be defined here — a `const` referenced from the timer
+  // while still in its temporal dead zone would throw instead of stopping.
+  safetyId = setTimeout(() => {
+    console.warn('safety stop fired — the SDK never reported a usable position')
+    cut()
+  }, limit + 2500)
+
   try {
     if (prepared) {
       // Already buffered and parked at 0:00 — resume is near-instant.
@@ -622,32 +649,23 @@ async function playClip(seconds) {
         await api('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [deviceId], play: false }) })
         await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
           method: 'PUT',
-          body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
+          body: JSON.stringify({ uris: [song.uri], position_ms: startMs }),
         })
-      } catch (e2) { toast(`Could not start playback: ${e2.message}`, 4000); return }
+      } catch (e2) {
+        stopPolling()
+        toast(`Could not start playback: ${e2.message}`, 4000)
+        return
+      }
     } else {
+      stopPolling()
       toast(`Could not start playback: ${err.message}`, 4000)
       return
     }
   }
 
-  if (my !== gen) return
+  if (my !== gen) { stopPolling(); return }
   isPlaying = true
   setIcon(true)
-
-  const limit = seconds * 1000
-
-  const cut = async () => {
-    if (my !== gen) return
-    stopPolling()
-    isPlaying = false
-    try { await player.pause() } catch {}
-    // Park back at 0:00 so the next, longer clip is also primed.
-    try { await player.seek(startMs); prepared = true } catch { prepared = false }
-    setIcon(false)
-    const bar = document.querySelector('.played')
-    if (bar) bar.style.width = '0%'
-  }
 
   // The SDK reports real track position, so the cut stays accurate however long
   // the play request took. But a 0.1s clip is shorter than a comfortable poll
@@ -690,11 +708,22 @@ async function playClip(seconds) {
 }
 
 async function togglePlay() {
+  const firstEver = !gestured
   gestured = true
   // If a failed prime left us muted, bring the volume back now that there is
   // a gesture to justify audio.
   try { await player.setVolume(userVolume) } catch {}
+
   if (isPlaying) { await hardStop(); return }
+
+  // Priming is gesture-gated, so the very first press has nothing buffered.
+  // Prime now rather than cold-starting: the cold path cannot guarantee an
+  // accurate short clip, and 0.1s is the stage that suffers most.
+  if (firstEver && !prepared && !priming) {
+    toast('Buffering…', 1500)
+    try { await prepareTrack() } catch {}
+  }
+
   await playClip(unlocked())
 }
 

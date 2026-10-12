@@ -280,6 +280,12 @@ if (!appjs) {
   if (noGenreFilter) ok("no genre filtering (every scanned track is kept)")
   else bad("genre filtering code is still present")
 
+  const armsSafety = appjs.includes("safetyId = setTimeout")
+  const cutBeforeSafety = appjs.indexOf("const cut = async") < appjs.indexOf("safetyId = setTimeout")
+  if (armsSafety && cutBeforeSafety) ok("an unconditional stop is armed before playback, after cut() exists")
+  else if (armsSafety) bad("safety timer references cut() before its declaration (temporal dead zone)")
+  else bad("no unconditional stop — a clip can play forever if position is never reported")
+
   const gated = appjs.includes("if (!gestured) return")
   if (gated) ok("priming waits for a user gesture (page load cannot autoplay)")
   else bad("priming runs unprompted — loading the page can start a full song")
