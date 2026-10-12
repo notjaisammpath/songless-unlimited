@@ -305,6 +305,15 @@ if (!appjs) {
   if (noGenreFilter) ok("no genre filtering (every scanned track is kept)")
   else bad("genre filtering code is still present")
 
+  const uriAware = appjs.includes("const isPrimed") && !appjs.includes("if (prepared) {")
+  if (uriAware) ok("resume is gated on WHICH track is buffered, not just that one is")
+  else bad("a stale primed flag can resume the previous round track (wrong song plays)")
+
+  const nr = appjs.indexOf("song = nextFromBag()")
+  const roundResets = nr > 0 && appjs.slice(nr, nr + 260).includes("preparedUri = null")
+  if (roundResets) ok("a new round clears primed state synchronously")
+  else bad("new round does not clear primed state before awaiting")
+
   const armsSafety = appjs.includes("safetyId = setTimeout")
   const cutBeforeSafety = appjs.indexOf("const cut = async") < appjs.indexOf("safetyId = setTimeout")
   if (armsSafety && cutBeforeSafety) ok("an unconditional stop is armed before playback, after cut() exists")

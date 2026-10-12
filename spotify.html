@@ -337,6 +337,27 @@
     .reveal .art { width: 92px; height: 92px; margin-bottom: 10px; }
     .slot:not(.filled) { display: none; }
   }
+
+  /* ------------------------------------------------------
+     Touch gesture hygiene
+     ------------------------------------------------------ */
+
+  /* Chrome on Android treats a quick double tap as zoom-to-fit and paints a
+     grey tap-highlight over the element while it waits to disambiguate.
+     Double-tapping Skip therefore flashed a grey overlay that stuck until the
+     keyboard was dismissed. manipulation opts out of double-tap zoom (and
+     removes the 300ms click delay). */
+  button,
+  a,
+  .suggest div,
+  input[type=range],
+  .play-btn { touch-action: manipulation; }
+
+  * { -webkit-tap-highlight-color: transparent; }
+
+  /* Keep text selection off controls so a fast double tap cannot start a
+     selection drag instead of firing the button. */
+  button, .slot, .ticks, .mode-head, .go { -webkit-user-select: none; user-select: none; }
 </style>
 </head>
 <body>

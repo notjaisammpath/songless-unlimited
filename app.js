@@ -74,6 +74,10 @@ let playbackErrors = 0
 let everPlayed = false
 let userVolume = 0.75
 let prepared = false
+// Which track is actually buffered in the player. A bare boolean could not
+// express this, so a stale "prepared" from the previous round made resume()
+// replay the old song while the game asked about the new one.
+let preparedUri = null
 let priming = null   // in-flight prepareTrack(), so plays can wait it out
 // Priming plays the track muted to buffer it. Doing that before the user has
 // interacted means page load alone starts audio, so it waits for a gesture.
@@ -84,12 +88,19 @@ const onsetCache = {}      // trackId -> ms, per session
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
+// Only safe to resume if the buffered track is the one being asked about.
+const isPrimed = () => prepared && !!song && preparedUri === song.uri
+
 // Spotify's Web Playback SDK supports Chrome, Edge and Safari. Firefox's
 // Widevine CDM gets rejected at the license endpoint with a 403, so playback
 // never starts even though the device registers correctly.
 const IS_FIREFOX = /firefox|fxios/i.test(navigator.userAgent)
 
 const $ = id => document.getElementById(id)
+// Coarse pointer means touch: no hover, and an on-screen keyboard that should
+// not be summoned on our initiative.
+const COARSE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches
+
 const redirectUri = () => `${location.origin}/callback`
 
 /* ---------------- small helpers ---------------- */
@@ -539,6 +550,7 @@ async function forceStop(maxMs = 4000) {
 
 async function prepareTrack() {
   prepared = false
+  preparedUri = null
   if (!playerReady || !deviceId || !song) return
   // Without a prior gesture, priming would make page load play music.
   if (!gestured) return
@@ -571,11 +583,13 @@ async function prepareTrack() {
       if (stopped) {
         try { await player.setVolume(userVolume) } catch {}
         prepared = !!song && song.uri === target
+        preparedUri = prepared ? target : null
       } else {
         // Could not stop it. Staying muted is far better than blasting the
         // track, and a cold start will recover on the next press.
         console.error('could not pause priming playback — staying muted')
         prepared = false
+        preparedUri = null
       }
       priming = null
     }
@@ -605,8 +619,16 @@ async function playClip(seconds) {
     stopPolling()
     isPlaying = false
     try { await player.pause() } catch {}
-    // Park back at the start so the next, longer clip is also primed.
-    try { await player.seek(startMs); prepared = true } catch { prepared = false }
+    // Park back at the start so the next, longer clip is also primed. Record
+    // which track that is — the next round must not resume this one.
+    try {
+      await player.seek(startMs)
+      prepared = true
+      preparedUri = song?.uri ?? null
+    } catch {
+      prepared = false
+      preparedUri = null
+    }
     setIcon(false)
     const bar = document.querySelector('.played')
     if (bar) bar.style.width = '0%'
@@ -623,14 +645,15 @@ async function playClip(seconds) {
   }, limit + 2500)
 
   try {
-    if (prepared) {
-      // Already buffered and parked at 0:00 — resume is near-instant.
+    if (isPrimed()) {
+      // Already buffered and parked at the start — resume is near-instant.
       try {
         await player.seek(startMs)
         await player.resume()
       } catch (e) {
         console.warn('resume rejected, cold starting instead:', e.message)
         prepared = false
+        preparedUri = null
         await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
           method: 'PUT',
           body: JSON.stringify({ uris: [song.uri], position_ms: startMs }),
@@ -719,7 +742,7 @@ async function togglePlay() {
   // Priming is gesture-gated, so the very first press has nothing buffered.
   // Prime now rather than cold-starting: the cold path cannot guarantee an
   // accurate short clip, and 0.1s is the stage that suffers most.
-  if (firstEver && !prepared && !priming) {
+  if (firstEver && !isPrimed() && !priming) {
     toast('Buffering…', 1500)
     try { await prepareTrack() } catch {}
   }
@@ -993,7 +1016,9 @@ function render() {
   const input = $('guess')
   input.oninput = onInput
   input.onkeydown = onKeyDown
-  input.focus()
+  // On a phone, re-focusing after every guess or skip yanks the keyboard back
+  // open and shoves the layout around. Let the user decide when to type.
+  if (!COARSE) input.focus()
 }
 
 function renderReveal() {
@@ -1128,6 +1153,10 @@ function newRound() {
   lastSuggestions = []
   song = nextFromBag()
   startMs = 0
+  // Clear synchronously: priming resolves asynchronously, and pressing play in
+  // that window would otherwise resume the previous round's track.
+  prepared = false
+  preparedUri = null
   render()
 
   // Resolve the onset first so priming buffers the right position.
