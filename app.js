@@ -68,6 +68,9 @@ let everPlayed = false
 let userVolume = 0.75
 let prepared = false
 let priming = null   // in-flight prepareTrack(), so plays can wait it out
+// Priming plays the track muted to buffer it. Doing that before the user has
+// interacted means page load alone starts audio, so it waits for a gesture.
+let gestured = false
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -475,6 +478,7 @@ async function hardStop() {
   gen++
   stopPolling()
   if (priming) { try { await priming } catch {} }
+  if (player) { try { await forceStop(1500) } catch {} }
   isPlaying = false
   try { if (player) await player.pause() } catch {}
   setIcon(false)
@@ -492,9 +496,27 @@ function setIcon(playing) {
  * instantly. Without this, Spotify's start-up latency (easily >100ms) swallows
  * the whole 0.1s stage. Done muted so the priming playback is inaudible.
  */
+/**
+ * Pause and confirm it. player.pause() rejects while the player is mid
+ * transition, and a swallowed rejection previously let muted priming playback
+ * continue and then get un-muted. Returns true only when state says paused.
+ */
+async function forceStop(maxMs = 4000) {
+  const deadline = Date.now() + maxMs
+  while (Date.now() < deadline) {
+    try { await player.pause() } catch {}
+    const st = await player.getCurrentState().catch(() => null)
+    if (!st || st.paused) return true
+    await sleep(120)
+  }
+  return false
+}
+
 async function prepareTrack() {
   prepared = false
   if (!playerReady || !deviceId || !song) return
+  // Without a prior gesture, priming would make page load play music.
+  if (!gestured) return
 
   const target = song.uri
 
@@ -515,14 +537,21 @@ async function prepareTrack() {
     } catch (err) {
       console.warn('pre-buffer failed; will cold start instead', err.message)
     } finally {
-      // CRITICAL: stop before restoring volume, on every path. Bailing out
-      // early here previously left a muted stream running and then un-muted
-      // it, so the song played on with nothing tracking it.
-      try { await player.pause() } catch {}
+      // CRITICAL: confirm the stop before restoring volume. A swallowed
+      // pause() rejection used to leave a muted stream running and then
+      // un-mute it, playing the whole song with nothing tracking it.
+      const stopped = await forceStop()
       try { await player.seek(0) } catch {}
-      try { await player.setVolume(userVolume) } catch {}
-      // Only claim primed status if the round still wants this track.
-      prepared = !!song && song.uri === target
+
+      if (stopped) {
+        try { await player.setVolume(userVolume) } catch {}
+        prepared = !!song && song.uri === target
+      } else {
+        // Could not stop it. Staying muted is far better than blasting the
+        // track, and a cold start will recover on the next press.
+        console.error('could not pause priming playback — staying muted')
+        prepared = false
+      }
       priming = null
     }
   })()
@@ -636,6 +665,10 @@ async function playClip(seconds) {
 }
 
 async function togglePlay() {
+  gestured = true
+  // If a failed prime left us muted, bring the volume back now that there is
+  // a gesture to justify audio.
+  try { await player.setVolume(userVolume) } catch {}
   if (isPlaying) { await hardStop(); return }
   await playClip(unlocked())
 }

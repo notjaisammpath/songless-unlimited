@@ -260,10 +260,11 @@ if (!appjs) {
   // plays on at full volume with nothing tracking it.
   const prep = appjs.slice(appjs.indexOf('async function prepareTrack'), appjs.indexOf('/** Play the real track'))
   const bodyAfterGuard = prep.slice(prep.indexOf('priming = ('))
-  const pausesInFinally = /\bfinally\b[\s\S]*player\.pause\(\)/.test(prep)
+  // The stop must happen on every exit path, not just the happy one.
+  const stopsInFinally = /\bfinally\b[\s\S]*(forceStop\(\)|player\.pause\(\))/.test(prep)
   const hasEarlyBail = /my !== gen\) return/.test(bodyAfterGuard)
-  if (pausesInFinally && !hasEarlyBail) ok('pre-buffer always pauses before restoring volume (no runaway playback)')
-  else bad('pre-buffer can exit without pausing — muted priming would play on un-muted')
+  if (stopsInFinally && !hasEarlyBail) ok('pre-buffer stops playback on every exit path (no runaway playback)')
+  else bad('pre-buffer can exit without stopping — muted priming would play on un-muted')
 
   appjs.includes('if (priming) {')
     ? ok('playback waits for in-flight priming instead of racing it')
@@ -276,6 +277,14 @@ if (!appjs) {
   appjs.includes('judgeable')
     ? ok('genre filter is fail-open (missing data never drops a track)')
     : bad('genre filter can drop tracks whose genres are unknown')
+
+  const gated = appjs.includes("if (!gestured) return")
+  if (gated) ok("priming waits for a user gesture (page load cannot autoplay)")
+  else bad("priming runs unprompted — loading the page can start a full song")
+
+  const verifiedStop = appjs.includes("const stopped = await forceStop()") && appjs.includes("if (stopped) {")
+  if (verifiedStop) ok("volume is restored only after the stop is confirmed")
+  else bad("volume can be restored after a failed pause — the track would play on")
 
   appjs.includes("guesses.some(g => g.id && g.id === guessed.id)")
     ? ok('repeated guesses rejected')
