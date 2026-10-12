@@ -563,3 +563,64 @@
   @media (hover: hover) {
     button.src:not(.on):hover { background: rgba(255,255,255,.05); border-color: var(--line-2); }
   }
+
+  /* ======================================================
+     Era picker (Popular Hip-Hop only)
+     ====================================================== */
+
+  .eras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+
+  .era {
+    position: relative;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 13px 6px 11px; border-radius: 10px;
+    background: rgba(255,255,255,.02);
+    border: 1px solid var(--line);
+    cursor: pointer; touch-action: manipulation;
+    transition: border-color .14s, background .14s, color .14s;
+  }
+  .era b { font-size: 0.95rem; font-weight: 800; letter-spacing: -0.01em; }
+  .era span { font-size: 0.68rem; color: var(--dimmer); font-family: var(--mono); }
+  .era:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  /* The reveal screen in Popular Hip-Hop offers the raw preview. */
+  .reveal audio { width: 100%; margin-top: 16px; }
+
+  /* The generic button hover rules are (0,2,1) and outrank .era.on at (0,2,0).
+     On touch, :hover sticks to the last chip tapped, so the reset stripped its
+     fill while leaving the gold text — a third, unintended state. These win on
+     both specificity and source order. */
+  button.era.on,
+  button.era.on:hover,
+  button.era.on:active {
+    background: rgba(240,180,41,.13);
+    border-color: rgba(240,180,41,.55);
+    color: var(--gold);
+  }
+  button.era.on span { color: rgba(240,180,41,.75); }
+
+  button.era:not(.on),
+  button.era:not(.on):hover {
+    background: rgba(255,255,255,.02);
+    border-color: var(--line);
+    color: var(--text);
+  }
+  button.era:not(.on) span { color: var(--dimmer); }
+
+  /* A corner tick, so selection never rests on fill colour alone. Always in the
+     DOM — only its colours change, so toggling cannot move the label. */
+  button.era .tick {
+    position: absolute; top: 5px; right: 5px;
+    width: 14px; height: 14px; border-radius: 4px;
+    border: 1.5px solid var(--line-2);
+    display: grid; place-items: center;
+    font-size: 0.56rem; font-weight: 900; line-height: 1;
+    color: transparent; background: transparent;
+    transition: background .14s, border-color .14s, color .14s;
+  }
+  button.era.on .tick { background: var(--gold); border-color: var(--gold); color: #241a02; }
+  button.era:not(.on) .tick { background: transparent; border-color: var(--line-2); color: transparent; }
+
+  @media (hover: hover) {
+    button.era:not(.on):hover { background: rgba(255,255,255,.05); border-color: var(--line-2); }
+  }

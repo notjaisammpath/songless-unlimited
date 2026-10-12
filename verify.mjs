@@ -7,6 +7,8 @@ import { readFileSync } from 'node:fs'
 // index.html is now the Spotify build (external app.js, no songs.json).
 // These checks target the self-contained iTunes-preview build.
 const html = readFileSync(new URL('./itunes.html', import.meta.url), 'utf8')
+// Shared styles moved out of the pages; CSS checks read the stylesheet itself.
+const gameCss = readFileSync(new URL('./game.css', import.meta.url), 'utf8')
 const songs = JSON.parse(readFileSync(new URL('./songs.json', import.meta.url), 'utf8'))
 
 let fails = 0, warns = 0
@@ -135,8 +137,8 @@ scriptForRules.includes("toast('Pick a song from the list')")
 
 head("2c. Mobile")
 
-for (const [name, src] of [["itunes.html", html]]) {
-  const css = src.slice(src.indexOf("<style>"), src.lastIndexOf("</style>"))
+for (const [name, src] of [["game.css", html]]) {
+  const css = gameCss
   const o = (css.match(/{/g) || []).length, c = (css.match(/}/g) || []).length
   if (o === c) ok(`${name} CSS braces balanced (${o})`)
   else bad(`${name} CSS braces unbalanced: ${o} open vs ${c} close`)
@@ -379,6 +381,49 @@ if (!appjs) {
   appjs.includes("guesses.some(g => g.id && g.id === guessed.id)")
     ? ok('repeated guesses rejected')
     : bad('repeated guesses consume an attempt')
+}
+
+
+/* ---------- 9. Apple Music mode ---------- */
+
+head('9. Apple Music mode (apple.js)')
+
+let applejs = ''
+try { applejs = readFileSync(new URL('./apple.js', import.meta.url), 'utf8') } catch {}
+
+if (!applejs) {
+  warn('apple.js not found — Apple-mode checks skipped')
+} else {
+  // Same invariant the Spotify side had to learn: never play without a stop.
+  const armed = applejs.includes('safetyId = setTimeout')
+  const cutFirst = applejs.indexOf('const cut = async') < applejs.indexOf('safetyId = setTimeout')
+  if (armed && cutFirst) ok('an unconditional stop is armed before playback, after cut() exists')
+  else if (armed) bad('safety timer references cut() before its declaration (temporal dead zone)')
+  else bad('no unconditional stop — a clip could play forever')
+
+  // setQueue buffers without playing, so priming here cannot run away. Guard
+  // that it stays keyed to the current track all the same.
+  if (applejs.includes('queuedId === song.playId')) ok('queued track is checked against the current song')
+  else bad('no check that the queued track matches the song being asked about')
+
+  if (applejs.includes('queuedId = null')) ok('a new round clears the queued track')
+  else bad('queued track is not cleared between rounds')
+
+  if (applejs.includes('FILLER')) ok('skits and sub-75s tracks are filtered')
+  else warn('no filler filter — album tracklists will include skits')
+
+  if (applejs.includes('already guessed that one')) ok('repeated guesses rejected')
+  else bad('repeated guesses consume an attempt')
+
+  if (applejs.includes('renderComingSoon')) ok('gated behind a coming-soon screen')
+  else warn('no coming-soon gate')
+
+  if (applejs.includes('music.developerToken')) ok('tokens come from the server, never embedded')
+  else bad('developer token may be hardcoded in the client')
+
+  // The private key must never be referenced client-side.
+  if (!/\.p8|BEGIN PRIVATE KEY/.test(applejs)) ok('no private key material in the client')
+  else bad('apple.js references private key material')
 }
 
 /* ---------- summary ---------- */

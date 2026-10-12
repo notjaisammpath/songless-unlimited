@@ -136,9 +136,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms))
 // Only safe to resume if the buffered track is the one being asked about.
 const isPrimed = () => prepared && !!song && preparedUri === song.uri
 
-// Spotify's Web Playback SDK supports Chrome, Edge and Safari. Firefox's
-// Widevine CDM gets rejected at the license endpoint with a 403, so playback
-// never starts even though the device registers correctly.
+// Firefox works, but only with Enhanced Tracking Protection off for the site:
+// ETP partitions sdk.scdn.co storage and the Widevine licence request then
+// 403s, so the device registers but nothing ever plays.
 const IS_FIREFOX = /firefox|fxios/i.test(navigator.userAgent)
 
 const $ = id => document.getElementById(id)
@@ -925,9 +925,9 @@ function renderDrmWall() {
         (<code>403</code> on <code>/widevine-license</code>), so no sound can come out.
       </div>
       <p class="note" style="text-align:left;margin:0 0 14px">
-        The Web Playback SDK only supports <b>Chrome, Edge and Safari</b>.${IS_FIREFOX
-          ? ' You are on Firefox, whose Widevine configuration Spotify rejects — this is a known limitation, not a bug in the game.'
-          : ' If you are on a Chromium browser, check that DRM playback is enabled and that no extension is blocking it.'}
+        ${IS_FIREFOX
+          ? 'On Firefox this is usually <b>Enhanced Tracking Protection</b>: it partitions the player’s storage so the licence request fails. Tap the shield in the address bar and turn it off for this site, then reload.'
+          : 'Check that DRM playback is enabled and that no extension is blocking it. Chrome is the best-supported browser for this.'}
       </p>
       <p class="note" style="text-align:left;margin:0 0 14px">
         Curated mode needs no DRM and works in every browser.

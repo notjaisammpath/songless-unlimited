@@ -2,13 +2,14 @@
   "name": "songless-unlimited",
   "version": "1.0.0",
   "private": true,
-  "description": "Unlimited Songless-style audio guessing game, hip-hop/rap only",
+  "description": "Name the rap track from a tenth of a second. Unlimited rounds, three audio modes.",
   "type": "module",
   "scripts": {
     "start": "node serve.mjs",
-    "build": "node build-catalog.mjs curated-seed.txt",
+    "verify": "node verify.mjs",
     "add": "node build-catalog.mjs",
-    "check": "node build-catalog.mjs --check"
+    "check-previews": "node build-catalog.mjs --check",
+    "rebuild-catalog": "node build-catalog.mjs curated-seed.txt"
   },
   "engines": {
     "node": ">=20"
