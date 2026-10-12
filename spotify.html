@@ -513,6 +513,45 @@
 
   /* Nothing should ever cause a sideways scroll. */
   html, body { max-width: 100%; overflow-x: hidden; }
+
+  /* ------------------------------------------------------
+     Source chips (must come last)
+     ------------------------------------------------------ */
+
+  .srcs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+
+  button.src {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: 11px 12px; border-radius: 10px; text-align: left;
+    cursor: pointer; touch-action: manipulation;
+    transition: border-color .14s, background .14s, color .14s;
+  }
+  button.src b { font-size: 0.82rem; font-weight: 700; letter-spacing: -0.01em; }
+  button.src span { font-size: 0.66rem; font-family: var(--mono); }
+
+  /* The generic button hover rules outrank a single class, and on touch
+     :hover sticks to the last chip tapped — which previously left a chip
+     half-styled. These win on specificity and source order. */
+  button.src.on,
+  button.src.on:hover,
+  button.src.on:active {
+    background: rgba(29,185,84,.13);
+    border-color: rgba(29,185,84,.5);
+    color: var(--spotify);
+  }
+  button.src.on span { color: rgba(29,185,84,.8); }
+
+  button.src:not(.on),
+  button.src:not(.on):hover {
+    background: rgba(255,255,255,.02);
+    border-color: var(--line);
+    color: var(--text);
+  }
+  button.src:not(.on) span { color: var(--dimmer); }
+
+  @media (hover: hover) {
+    button.src:not(.on):hover { background: rgba(255,255,255,.05); border-color: var(--line-2); }
+  }
 </style>
 </head>
 <body>

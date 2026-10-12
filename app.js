@@ -27,6 +27,27 @@ const K_VERIFIER = 'sp-verifier'
 const K_CATALOG = 'sp-catalog'
 const K_STATS = 'sp-stats'
 const K_BAG = 'sp-bag'
+const K_SOURCES = 'sp-sources'
+
+// Which parts of the Spotify library to scan. Each is independent, so a 403
+// on one never costs the others.
+const SOURCES = [
+  { key: 'top', label: 'Top tracks' },
+  { key: 'saved', label: 'Saved songs' },
+  { key: 'albums', label: 'Saved albums' },
+  { key: 'recent', label: 'Recently played' },
+]
+
+let pendingSources = null
+
+function loadSources() {
+  try {
+    const v = JSON.parse(localStorage.getItem(K_SOURCES))
+    const clean = Array.isArray(v) ? v.filter(k => SOURCES.some(s => s.key === k)) : []
+    if (clean.length) return clean
+  } catch {}
+  return SOURCES.map(s => s.key)
+}
 
 const SCOPES = [
   'streaming',
@@ -278,6 +299,13 @@ async function api(path, opts = {}) {
 async function buildCatalog() {
   const progress = m => { const el = $('build-status'); if (el) el.textContent = m }
 
+  const chosen = loadSources()
+  const use = k => chosen.includes(k)
+  // Tracks contributed per source, so Settings can show what each one is worth.
+  const contributed = {}
+  let mark = 0
+  const tally = k => { contributed[k] = tracks.size - mark }
+
   const tracks = new Map()
 
   const MAX_TRACKS = 3000
@@ -296,7 +324,8 @@ async function buildCatalog() {
 
   // Top tracks across all three windows. The endpoint caps a page at 50 but
   // accepts an offset, so each window yields roughly 99 rather than 50.
-  for (const range of ['short_term', 'medium_term', 'long_term']) {
+  mark = tracks.size
+  if (use('top')) for (const range of ['short_term', 'medium_term', 'long_term']) {
     for (const offset of [0, 49]) {
       progress(`Reading your top tracks (${range.replace('_term', '')})…`)
       try {
@@ -311,8 +340,11 @@ async function buildCatalog() {
     }
   }
 
+  tally('top')
+
   // Saved library — paginate until exhausted, not just the first few pages.
-  for (let page = 0; page < 20; page++) {
+  mark = tracks.size
+  if (use('saved')) for (let page = 0; page < 20; page++) {
     progress(`Reading your saved songs… (${tracks.size} found)`)
     const r = await api(`/me/tracks?limit=50&offset=${page * 50}`)
     const items = r?.items || []
@@ -320,8 +352,11 @@ async function buildCatalog() {
     if (items.length < 50 || tracks.size >= MAX_TRACKS) break
   }
 
+  tally('saved')
+
   // Recently played.
-  try {
+  mark = tracks.size
+  if (use('recent')) try {
     progress(`Reading recently played… (${tracks.size} found)`)
     const r = await api('/me/player/recently-played?limit=50')
     for (const it of r?.items || []) add(it?.track)
@@ -329,9 +364,12 @@ async function buildCatalog() {
     console.warn('recently-played unavailable:', err.message)
   }
 
+  tally('recent')
+
   // Saved albums — by far the largest source for an album-based library, and
   // completely invisible to /me/tracks.
-  try {
+  mark = tracks.size
+  if (use('albums')) try {
     for (let page = 0; page < 10; page++) {
       if (tracks.size >= MAX_TRACKS) break
       progress(`Reading saved albums… (${tracks.size} found)`)
@@ -355,9 +393,12 @@ async function buildCatalog() {
   if (tracks.size >= MAX_TRACKS) {
     console.warn(`hit the ${MAX_TRACKS}-track scan cap — some sources were not fully read`)
   }
-  console.log(`scanned ${tracks.size} tracks total (${skipped} skits/short tracks skipped)`)
+  tally('albums')
+  console.log(`scanned ${tracks.size} tracks total (${skipped} skits/short tracks skipped)`, contributed)
 
-  if (!tracks.size) throw new Error('Spotify returned no tracks for your account.')
+  if (!tracks.size) {
+    throw new Error(`No tracks came back from the selected source${chosen.length === 1 ? '' : 's'} (${chosen.join(', ')}). Try enabling more in Settings.`)
+  }
 
   const out = []
   for (const t of tracks.values()) {
@@ -384,7 +425,7 @@ async function buildCatalog() {
 
   const catalog = [...bySong.values()]
 
-  lsSet(K_CATALOG, { builtAt: Date.now(), songs: catalog, scanned: tracks.size })
+  lsSet(K_CATALOG, { builtAt: Date.now(), songs: catalog, scanned: tracks.size, sources: chosen, contributed })
   return catalog
 }
 
@@ -1170,21 +1211,48 @@ function settingsHtml() {
   const c = lsGet(K_CATALOG)
   return `
     <h2>Settings</h2>
-    <p class="note" style="text-align:left">
-      ${CATALOG.length} songs, collapsed from ${c?.scanned ?? CATALOG.length} scanned across your
-      top tracks, saved library, saved albums and recently played.
+    <p class="note" style="text-align:left;margin:0 0 13px">
+      ${CATALOG.length} songs, collapsed from ${c?.scanned ?? CATALOG.length} scanned.
     </p>
-    <button class="btn-wide" id="s-rebuild">Rebuild catalog from Spotify</button>
+    <div class="srcs">
+      ${SOURCES.map(src => {
+        const on = pendingSources.includes(src.key)
+        const n = c?.contributed?.[src.key]
+        return `<button class="src ${on ? 'on' : ''}" data-k="${src.key}" aria-pressed="${on}">
+          <b>${esc(src.label)}</b>
+          <span>${n == null ? 'not scanned' : `+${n} last time`}</span>
+        </button>`
+      }).join('')}
+    </div>
+    <button class="btn-wide btn-primary" id="s-rebuild" style="margin-top:13px"
+            ${pendingSources.length ? '' : 'disabled'}>
+      ${pendingSources.length ? 'Rebuild from these' : 'Pick at least one source'}
+    </button>
     <button class="btn-wide" id="s-logout" style="margin-top:8px">Disconnect Spotify</button>
   `
 }
 
 function wireSettings() {
-  $('s-rebuild').onclick = async () => {
+  for (const b of document.querySelectorAll('.src')) {
+    b.onclick = () => {
+      const k = b.dataset.k
+      pendingSources = pendingSources.includes(k)
+        ? pendingSources.filter(x => x !== k)
+        : [...pendingSources, k]
+      openModal(settingsHtml())
+      wireSettings()
+    }
+  }
+
+  const rebuild = $('s-rebuild')
+  if (rebuild) rebuild.onclick = async () => {
+    try { localStorage.setItem(K_SOURCES, JSON.stringify(pendingSources)) } catch {}
+    try { localStorage.removeItem(K_BAG) } catch {}
     $('modal').hidden = true
     renderBuilding()
     try { CATALOG = await buildCatalog(); afterCatalog() } catch (e) { fatal(e.message) }
   }
+
   $('s-logout').onclick = logout
 }
 
@@ -1215,7 +1283,11 @@ function afterCatalog() {
 async function boot() {
   $('btn-stats').onclick = () => openModal(statsHtml())
   $('btn-how').onclick = () => openModal(HOW_HTML)
-  $('btn-settings').onclick = () => { openModal(settingsHtml()); wireSettings() }
+  $('btn-settings').onclick = () => {
+    pendingSources = loadSources()
+    openModal(settingsHtml())
+    wireSettings()
+  }
   $('modal-close').onclick = () => { $('modal').hidden = true }
   $('modal').onclick = e => { if (e.target.id === 'modal') $('modal').hidden = true }
   document.addEventListener('keydown', e => { if (e.key === 'Escape') $('modal').hidden = true })
