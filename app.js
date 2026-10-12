@@ -141,6 +141,34 @@ const isPrimed = () => prepared && !!song && preparedUri === song.uri
 // 403s, so the device registers but nothing ever plays.
 const IS_FIREFOX = /firefox|fxios/i.test(navigator.userAgent)
 
+// The SDK requests its DRM licence over XHR, and we cannot see the result any
+// other way. Watching it means the failure screen can state what really
+// happened rather than assuming DRM every time.
+let drmStatus = null      // last status seen on /widevine-license
+let lastPlaybackError = ''
+
+;(function watchLicence() {
+  const open = XMLHttpRequest.prototype.open
+  const send = XMLHttpRequest.prototype.send
+
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    this._isLicence = typeof url === 'string' && url.includes('widevine-license')
+    return open.call(this, method, url, ...rest)
+  }
+
+  XMLHttpRequest.prototype.send = function (...args) {
+    if (this._isLicence) {
+      this.addEventListener('loadend', () => {
+        drmStatus = this.status
+        if (this.status && (this.status < 200 || this.status >= 300)) {
+          console.warn('DRM licence request failed:', this.status)
+        }
+      })
+    }
+    return send.apply(this, args)
+  }
+})()
+
 const $ = id => document.getElementById(id)
 // Coarse pointer means touch: no hover, and an on-screen keyboard that should
 // not be summoned on our initiative.
@@ -496,6 +524,7 @@ async function initPlayer() {
   })
   player.addListener('playback_error', ({ message }) => {
     console.error('playback_error', message)
+    lastPlaybackError = message || ''
     // "The operation is not allowed" is a transport-command race, not a
     // licence failure — escalating it to the DRM screen would be wrong.
     if (/not allowed/i.test(message || '')) return
@@ -917,24 +946,41 @@ function renderSetup(err) {
 
 function renderDrmWall() {
   stopPolling()
+
+  // Only three things are actually known here: whether the licence request
+  // failed, what the SDK said, and that nothing has played. Say those.
+  const drmFailed = drmStatus !== null && (drmStatus < 200 || drmStatus >= 300)
+  const drmOk = drmStatus !== null && drmStatus >= 200 && drmStatus < 300
+
+  const cause = drmFailed
+    ? `Spotify refused the DRM licence (<b>${drmStatus}</b> on <code>/widevine-license</code>), so no audio can be decoded.`
+    : drmOk
+      ? 'The DRM licence was granted, so this is not a DRM problem — playback itself keeps failing.'
+      : 'Playback keeps failing before any audio comes out.'
+
+  const advice = drmFailed && IS_FIREFOX
+    ? 'On Firefox this is usually <b>Enhanced Tracking Protection</b>: it partitions the player\u2019s storage and the licence request then fails. Tap the shield in the address bar, turn it off for this site, and reload.'
+    : drmFailed
+      ? 'Check that DRM playback is enabled and that no extension is blocking it.'
+      : 'The usual cause is <b>Spotify playing on another device</b> \u2014 a phone, desktop app or another tab. Pause it everywhere else, then try again.'
+
   $('app').innerHTML = `
     <div class="card">
       <div class="err">
-        <b>Your browser won't play Spotify audio</b><br>
-        The device registered fine, but Spotify refused the DRM licence
-        (<code>403</code> on <code>/widevine-license</code>), so no sound can come out.
+        <b>Playback isn't starting</b><br>
+        The device registered with Spotify, but no audio is reaching the speakers.<br>
+        ${cause}
       </div>
+      <p class="note" style="text-align:left;margin:0 0 12px">${advice}</p>
+      ${lastPlaybackError ? `<p class="note" style="text-align:left;margin:0 0 12px">
+        The player reported: <code>${esc(lastPlaybackError)}</code>
+      </p>` : ''}
       <p class="note" style="text-align:left;margin:0 0 14px">
-        ${IS_FIREFOX
-          ? 'On Firefox this is usually <b>Enhanced Tracking Protection</b>: it partitions the player’s storage so the licence request fails. Tap the shield in the address bar and turn it off for this site, then reload.'
-          : 'Check that DRM playback is enabled and that no extension is blocking it. Chrome is the best-supported browser for this.'}
+        Popular Hip-Hop needs no DRM and works in every browser.
       </p>
-      <p class="note" style="text-align:left;margin:0 0 14px">
-        Curated mode needs no DRM and works in every browser.
-      </p>
-      <a class="btn-wide btn-primary" href="/itunes"
-         style="display:block;text-align:center;text-decoration:none;padding:11px">Play curated mode instead</a>
-      <button class="btn-wide" id="btn-drm-retry" style="margin-top:8px">Try again anyway</button>
+      <button class="btn-wide btn-primary" id="btn-drm-retry">Try again</button>
+      <a class="btn-wide" href="/itunes"
+         style="display:block;text-align:center;text-decoration:none;padding:11px;margin-top:8px">Play Popular Hip-Hop instead</a>
     </div>`
   $('btn-drm-retry').onclick = () => location.reload()
 }
@@ -1388,11 +1434,6 @@ async function boot() {
     if (profile?.product !== 'premium') {
       fatal(`This account is "${profile?.product}", and the Web Playback SDK requires Premium. The iTunes-preview version at /itunes-mode.html works on any account.`)
       return
-    }
-
-    if (IS_FIREFOX) {
-      console.warn('Firefox detected — the Spotify Web Playback SDK is not supported here.')
-      toast('Firefox can\'t play Spotify audio — use Chrome, or try curated mode', 6000)
     }
 
     bootPhase = 'starting the Web Playback SDK player'

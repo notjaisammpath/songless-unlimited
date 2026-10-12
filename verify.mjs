@@ -364,6 +364,15 @@ if (!appjs) {
   else if (playSites > 1) bad(`${playSites} separate /play call sites — one will lack 404 device recovery`)
   else bad("no playFrom helper found")
 
+  // The failure screen must report what was observed, not assume a cause.
+  const observesDrm = appjs.includes("widevine-license") && appjs.includes("drmStatus =")
+  if (observesDrm) ok("the DRM licence result is observed, not assumed")
+  else bad("failure screen asserts a DRM cause it never checked")
+
+  const noHardcoded403 = !appjs.includes("403</code>")
+  if (noHardcoded403) ok("no hardcoded status code in the failure copy")
+  else bad("failure copy hardcodes a 403 regardless of what happened")
+
   const armsSafety = appjs.includes("safetyId = setTimeout")
   const cutBeforeSafety = appjs.indexOf("const cut = async") < appjs.indexOf("safetyId = setTimeout")
   if (armsSafety && cutBeforeSafety) ok("an unconditional stop is armed before playback, after cut() exists")
