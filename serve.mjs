@@ -72,7 +72,7 @@ server.listen(PORT, HOST, () => {
   // Spotify no longer accepts `localhost` as a redirect-URI host, so 127.0.0.1
   // is the address that actually works for the OAuth round trip.
   console.log(`      PLAY HERE   http://127.0.0.1:${PORT}`)
-  console.log(`      itunes mode http://127.0.0.1:${PORT}/itunes-mode.html   (no Spotify needed)`)
+  console.log(`      itunes mode http://127.0.0.1:${PORT}/itunes   (no Spotify needed)`)
   console.log('')
   for (const a of addrs) {
     const tag = /tailscale/i.test(a.name) ? 'tailnet' : 'network'
