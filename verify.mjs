@@ -346,6 +346,12 @@ if (!appjs) {
   if (roundResets) ok("a new round clears primed state synchronously")
   else bad("new round does not clear primed state before awaiting")
 
+  // Spotify drops an idle web-player device; every play must be able to revive it.
+  const playSites = appjs.split("me/player/play").length - 1
+  if (playSites === 1 && appjs.includes("async function playFrom")) ok("all playback goes through playFrom, which recovers a dropped device")
+  else if (playSites > 1) bad(`${playSites} separate /play call sites — one will lack 404 device recovery`)
+  else bad("no playFrom helper found")
+
   const armsSafety = appjs.includes("safetyId = setTimeout")
   const cutBeforeSafety = appjs.indexOf("const cut = async") < appjs.indexOf("safetyId = setTimeout")
   if (armsSafety && cutBeforeSafety) ok("an unconditional stop is armed before playback, after cut() exists")

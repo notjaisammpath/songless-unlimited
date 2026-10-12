@@ -553,6 +553,34 @@ async function forceStop(maxMs = 4000) {
   return false
 }
 
+/**
+ * Start a track on our device, recovering from the web player going idle.
+ *
+ * Spotify drops an inactive web-player device, after which /play returns
+ * 404 NO_ACTIVE_DEVICE. Transferring playback to it revives it. Every caller
+ * needs this — playFull() lacked it and failed outright on the reveal screen.
+ */
+async function playFrom(uri, positionMs) {
+  const url = `/me/player/play?device_id=${encodeURIComponent(deviceId)}`
+  const body = JSON.stringify({ uris: [uri], position_ms: positionMs })
+
+  try {
+    await api(url, { method: 'PUT', body })
+    return
+  } catch (err) {
+    if (err.status !== 404 && !/device/i.test(err.message)) throw err
+    console.warn('device went idle; transferring playback and retrying')
+  }
+
+  await api('/me/player', {
+    method: 'PUT',
+    body: JSON.stringify({ device_ids: [deviceId], play: false }),
+  })
+  // The transfer needs a moment to register before /play will take.
+  await sleep(350)
+  await api(url, { method: 'PUT', body })
+}
+
 async function prepareTrack() {
   prepared = false
   preparedUri = null
@@ -565,10 +593,7 @@ async function prepareTrack() {
   priming = (async () => {
     try {
       await player.setVolume(0)
-      await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ uris: [target], position_ms: startMs }),
-      })
+      await playFrom(target, startMs)
 
       // Wait for the stream to actually begin before pausing it.
       for (let i = 0; i < 80; i++) {
@@ -659,36 +684,15 @@ async function playClip(seconds) {
         console.warn('resume rejected, cold starting instead:', e.message)
         prepared = false
         preparedUri = null
-        await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-          method: 'PUT',
-          body: JSON.stringify({ uris: [song.uri], position_ms: startMs }),
-        })
+        await playFrom(song.uri, startMs)
       }
     } else {
-      await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-        method: 'PUT',
-        body: JSON.stringify({ uris: [song.uri], position_ms: startMs }),
-      })
+      await playFrom(song.uri, startMs)
     }
   } catch (err) {
-    // 404 NO_ACTIVE_DEVICE: transfer to our device, then retry once.
-    if (/404|device/i.test(err.message)) {
-      try {
-        await api('/me/player', { method: 'PUT', body: JSON.stringify({ device_ids: [deviceId], play: false }) })
-        await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-          method: 'PUT',
-          body: JSON.stringify({ uris: [song.uri], position_ms: startMs }),
-        })
-      } catch (e2) {
-        stopPolling()
-        toast(`Could not start playback: ${e2.message}`, 4000)
-        return
-      }
-    } else {
-      stopPolling()
-      toast(`Could not start playback: ${err.message}`, 4000)
-      return
-    }
+    stopPolling()
+    toast(`Could not start playback: ${err.message}`, 4000)
+    return
   }
 
   if (my !== gen) { stopPolling(); return }
@@ -761,10 +765,7 @@ async function playFull() {
   const my = ++gen
   stopPolling()
   try {
-    await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
-    })
+    await playFrom(song.uri, 0)
     if (my !== gen) return
     isPlaying = true
     const b = $('full-ic'); if (b) b.textContent = '⏸'
@@ -773,6 +774,9 @@ async function playFull() {
 
 async function pauseFull() {
   try { await player.pause() } catch {}
+  // The full track left the player mid-song, so nothing is primed any more.
+  prepared = false
+  preparedUri = null
   isPlaying = false
   const b = $('full-ic'); if (b) b.textContent = '▶'
 }
