@@ -594,6 +594,12 @@ function setIcon(playing) {
  * transition, and a swallowed rejection previously let muted priming playback
  * continue and then get un-muted. Returns true only when state says paused.
  */
+/** What the player actually holds, rather than what we believe it holds. */
+async function currentUri() {
+  const st = await player?.getCurrentState?.().catch(() => null)
+  return st?.track_window?.current_track?.uri || null
+}
+
 async function forceStop(maxMs = 4000) {
   const deadline = Date.now() + maxMs
   while (Date.now() < deadline) {
@@ -643,6 +649,12 @@ async function prepareTrack() {
   const target = song.uri
 
   priming = (async () => {
+    // Set only when playback demonstrably started ON THE INTENDED TRACK.
+    // Assuming success here is what replayed the previous round's song: a
+    // failed playFrom left the old track loaded while we claimed the new one
+    // was primed, so every later press resumed the stale track.
+    let loaded = false
+
     try {
       await player.setVolume(0)
       await playFrom(target, startMs)
@@ -650,7 +662,13 @@ async function prepareTrack() {
       // Wait for the stream to actually begin before pausing it.
       for (let i = 0; i < 80; i++) {
         const st = await player.getCurrentState().catch(() => null)
-        if (st && !st.paused && st.position > 0) { everPlayed = true; playbackErrors = 0; break }
+        if (st && !st.paused && st.position > 0) {
+          everPlayed = true
+          playbackErrors = 0
+          loaded = st.track_window?.current_track?.uri === target
+          if (!loaded) console.warn('primed the wrong track:', st.track_window?.current_track?.uri, 'wanted', target)
+          break
+        }
         await sleep(50)
       }
     } catch (err) {
@@ -662,10 +680,16 @@ async function prepareTrack() {
       const stopped = await forceStop()
       try { await player.seek(startMs) } catch {}
 
-      if (stopped) {
+      if (stopped && loaded) {
         try { await player.setVolume(userVolume) } catch {}
         prepared = !!song && song.uri === target
         preparedUri = prepared ? target : null
+      } else if (stopped) {
+        // Stopped cleanly, but the intended track never loaded. A cold start
+        // on the next press is correct; claiming primed here is the bug.
+        try { await player.setVolume(userVolume) } catch {}
+        prepared = false
+        preparedUri = null
       } else {
         // Could not stop it. Staying muted is far better than blasting the
         // track, and a cold start will recover on the next press.
@@ -702,11 +726,12 @@ async function playClip(seconds) {
     isPlaying = false
     try { await player.pause() } catch {}
     // Park back at the start so the next, longer clip is also primed. Record
-    // which track that is — the next round must not resume this one.
+    // what the player actually holds, so a mismatch can never be inherited.
     try {
       await player.seek(startMs)
-      prepared = true
-      preparedUri = song?.uri ?? null
+      const live = await currentUri()
+      preparedUri = live || null
+      prepared = !!live
     } catch {
       prepared = false
       preparedUri = null
@@ -762,6 +787,21 @@ async function playClip(seconds) {
     let st
     try { st = await player.getCurrentState() } catch { return }
     if (!st) return
+
+    // If the player is on a different track than the question, every guess
+    // this round is unanswerable. Stop and cold-start the right one.
+    const playingUri = st.track_window?.current_track?.uri
+    if (playingUri && song && playingUri !== song.uri) {
+      console.error('wrong track playing:', playingUri, 'expected', song.uri)
+      stopPolling()
+      prepared = false
+      preparedUri = null
+      cut().then(() => {
+        toast('Loading the right track…', 1500)
+        playClip(seconds)
+      })
+      return
+    }
 
     // Everything is measured from startMs, not from 0:00.
     const into = st.position - startMs

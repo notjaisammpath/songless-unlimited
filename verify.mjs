@@ -349,6 +349,15 @@ if (!appjs) {
   if (noGenreFilter) ok("no genre filtering (every scanned track is kept)")
   else bad("genre filtering code is still present")
 
+  // Bookkeeping must never outrank what the player reports.
+  const confirmsLoad = appjs.includes("if (stopped && loaded)")
+  if (confirmsLoad) ok("priming only claims success when the track demonstrably loaded")
+  else bad("priming can mark a track primed after a failed load — replays the previous song")
+
+  const watchesLive = appjs.includes("track_window?.current_track?.uri")
+  if (watchesLive) ok("the playing track is checked against the question mid-clip")
+  else bad("nothing detects the player holding a different track than the question")
+
   const uriAware = appjs.includes("const isPrimed") && !appjs.includes("if (prepared) {")
   if (uriAware) ok("resume is gated on WHICH track is buffered, not just that one is")
   else bad("a stale primed flag can resume the previous round track (wrong song plays)")
