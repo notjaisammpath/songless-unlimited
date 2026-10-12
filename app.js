@@ -60,6 +60,12 @@ let cutId = null
 let isPlaying = false
 let profile = null
 let bootPhase = 'starting up'
+let playbackErrors = 0
+
+// Spotify's Web Playback SDK supports Chrome, Edge and Safari. Firefox's
+// Widevine CDM gets rejected at the license endpoint with a 403, so playback
+// never starts even though the device registers correctly.
+const IS_FIREFOX = /firefox|fxios/i.test(navigator.userAgent)
 
 const $ = id => document.getElementById(id)
 const redirectUri = () => `${location.origin}/callback`
@@ -421,7 +427,14 @@ async function initPlayer() {
   })
   player.addListener('playback_error', ({ message }) => {
     console.error('playback_error', message)
-    toast('Playback error — check Spotify isn\'t playing elsewhere')
+    playbackErrors++
+    // The SDK retries the licence request in a loop; one toast per attempt is
+    // noise. After a couple of failures, say what is actually wrong.
+    if (playbackErrors === 1) {
+      toast('Playback error — check Spotify isn\'t playing elsewhere', 3000)
+    } else if (playbackErrors === 3) {
+      renderDrmWall()
+    }
   })
 
   const connected = await player.connect()
@@ -660,6 +673,30 @@ function renderSetup(err) {
     login()
   }
   $('cid').onkeydown = e => { if (e.key === 'Enter') $('btn-save').click() }
+}
+
+function renderDrmWall() {
+  stopPolling()
+  $('app').innerHTML = `
+    <div class="card">
+      <div class="err">
+        <b>Your browser won't play Spotify audio</b><br>
+        The device registered fine, but Spotify refused the DRM licence
+        (<code>403</code> on <code>/widevine-license</code>), so no sound can come out.
+      </div>
+      <p class="note" style="text-align:left;margin:0 0 14px">
+        The Web Playback SDK only supports <b>Chrome, Edge and Safari</b>.${IS_FIREFOX
+          ? ' You are on Firefox, whose Widevine configuration Spotify rejects — this is a known limitation, not a bug in the game.'
+          : ' If you are on a Chromium browser, check that DRM playback is enabled and that no extension is blocking it.'}
+      </p>
+      <p class="note" style="text-align:left;margin:0 0 14px">
+        Curated mode needs no DRM and works in every browser.
+      </p>
+      <a class="btn-wide btn-primary" href="/itunes"
+         style="display:block;text-align:center;text-decoration:none;padding:11px">Play curated mode instead</a>
+      <button class="btn-wide" id="btn-drm-retry" style="margin-top:8px">Try again anyway</button>
+    </div>`
+  $('btn-drm-retry').onclick = () => location.reload()
 }
 
 function renderConnect() {
@@ -1048,6 +1085,11 @@ async function boot() {
     if (profile?.product !== 'premium') {
       fatal(`This account is "${profile?.product}", and the Web Playback SDK requires Premium. The iTunes-preview version at /itunes-mode.html works on any account.`)
       return
+    }
+
+    if (IS_FIREFOX) {
+      console.warn('Firefox detected — the Spotify Web Playback SDK is not supported here.')
+      toast('Firefox can\'t play Spotify audio — use Chrome, or try curated mode', 6000)
     }
 
     bootPhase = 'starting the Web Playback SDK player'
