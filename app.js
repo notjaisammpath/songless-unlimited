@@ -59,6 +59,7 @@ let pollId = null
 let cutId = null
 let isPlaying = false
 let profile = null
+let bootPhase = 'starting up'
 
 const $ = id => document.getElementById(id)
 const redirectUri = () => `${location.origin}/callback`
@@ -215,9 +216,18 @@ async function api(path, opts = {}) {
     return api(path, opts)
   }
   if (!res.ok) {
+    // Include the raw body and the request itself — a bare "403 Forbidden"
+    // is useless when half a dozen different calls could have produced it.
+    const raw = await res.text().catch(() => '')
     let detail = ''
-    try { detail = (await res.json())?.error?.message || '' } catch {}
-    throw new Error(`${res.status} ${detail}`.trim())
+    try { detail = JSON.parse(raw)?.error?.message || '' } catch {}
+    if (!detail) detail = raw.slice(0, 300).replace(/\s+/g, ' ').trim() || res.statusText
+
+    const err = new Error(`${res.status} ${detail}  [${opts.method || 'GET'} ${path}]`)
+    err.status = res.status
+    err.path = path
+    console.error('Spotify API error', { status: res.status, path, method: opts.method || 'GET', body: raw })
+    throw err
   }
   return res.json().catch(() => null)
 }
@@ -518,10 +528,28 @@ const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6
    Screens
    ============================================================ */
 
+function hintFor(msg) {
+  const m = String(msg)
+  if (/403/.test(m) && /\/me\b|\/token/.test(m)) {
+    return "A 403 here almost always means this Spotify account is not on the app's allowlist. "
+      + "Spotify apps start in Development Mode: open the dashboard, go to Settings then User Management, "
+      + "and add the exact email of the account you just logged in with."
+  }
+  if (/403/.test(m) && /player/.test(m)) {
+    return "A 403 on a player call usually means the account is not Premium, or Spotify is already playing "
+      + "on another device. It can also mean the browser blocked DRM playback \u2014 the SDK is only reliably "
+      + "supported in Chrome."
+  }
+  if (/401/.test(m)) return "The token was rejected. Reconnecting should fix it."
+  return ""
+}
+
 function fatal(msg, relogin = false) {
+  const hint = hintFor(msg)
   $('app').innerHTML = `
     <div class="card">
-      <div class="err"><b>Problem</b><br>${esc(msg)}</div>
+      <div class="err"><b>Failed while ${esc(bootPhase)}</b><br>${esc(msg)}</div>
+      ${hint ? `<p class="note" style="text-align:left;margin:0 0 14px">${esc(hint)}</p>` : ''}
       ${relogin ? `<button class="btn-wide btn-primary" id="btn-relogin">Reconnect Spotify</button>` : ''}
       <button class="btn-wide" id="btn-reset" style="margin-top:8px">Reset everything</button>
     </div>`
@@ -911,6 +939,7 @@ async function boot() {
 
   if (qs.get('code')) {
     renderBuilding()
+    bootPhase = 'exchanging the authorization code for a token'
     $('build-status').textContent = 'Exchanging authorization code…'
     try {
       await exchangeCode(qs.get('code'))
@@ -926,6 +955,7 @@ async function boot() {
   renderBuilding()
 
   try {
+    bootPhase = 'reading your Spotify profile (GET /me)'
     $('build-status').textContent = 'Checking your account…'
     profile = await api('/me')
     if (profile?.product !== 'premium') {
@@ -933,6 +963,7 @@ async function boot() {
       return
     }
 
+    bootPhase = 'starting the Web Playback SDK player'
     $('build-status').textContent = 'Starting the player…'
     await initPlayer()
 
@@ -940,6 +971,7 @@ async function boot() {
     if (cached?.songs?.length) {
       CATALOG = cached.songs
     } else {
+      bootPhase = 'building your catalog from top tracks and saved songs'
       CATALOG = await buildCatalog(false)
       if (CATALOG.length < 20) { renderThin(CATALOG.length, cached?.scanned || 0); return }
     }
