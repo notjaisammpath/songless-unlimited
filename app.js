@@ -41,11 +41,12 @@ const SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',
   'user-read-recently-played',
+  'user-follow-read',
 ].join(' ')
 
 // Bump when SCOPES changes: a token minted under the old set silently 403s on
 // the new endpoints, so the stored token must be discarded and re-consented.
-const SCOPE_VERSION = 2
+const SCOPE_VERSION = 3
 
 /* ---------------- state ---------------- */
 
@@ -290,11 +291,21 @@ async function buildCatalog() {
     tracks.set(t.id, t)
   }
 
-  // Top tracks across all three windows.
+  // Top tracks across all three windows. The endpoint caps a page at 50 but
+  // accepts an offset, so each window yields roughly 99 rather than 50.
   for (const range of ['short_term', 'medium_term', 'long_term']) {
-    progress(`Reading your top tracks (${range.replace('_term', '')})…`)
-    const r = await api(`/me/top/tracks?limit=50&time_range=${range}`)
-    for (const t of r?.items || []) add(t)
+    for (const offset of [0, 49]) {
+      progress(`Reading your top tracks (${range.replace('_term', '')})…`)
+      try {
+        const r = await api(`/me/top/tracks?limit=50&offset=${offset}&time_range=${range}`)
+        const items = r?.items || []
+        for (const t of items) add(t)
+        if (items.length < 50) break
+      } catch (err) {
+        console.warn(`top tracks ${range} offset ${offset}:`, err.message)
+        break
+      }
+    }
   }
 
   // Saved library — paginate until exhausted, not just the first few pages.
@@ -364,9 +375,94 @@ async function buildCatalog() {
     console.warn('playlists unavailable:', err.message)
   }
 
+  // Saved albums. People who save whole albums rather than tracks have most of
+  // their library here, and it is invisible to /me/tracks.
+  try {
+    for (let page = 0; page < 10; page++) {
+      if (tracks.size >= MAX_TRACKS) break
+      progress(`Reading saved albums… (${tracks.size} found)`)
+      const r = await api(`/me/albums?limit=50&offset=${page * 50}`)
+      const items = r?.items || []
+      for (const it of items) {
+        const al = it?.album
+        if (!al) continue
+        // Album tracks are simplified objects with no album field of their own,
+        // so graft the parent album on for artwork and year.
+        for (const t of al.tracks?.items || []) {
+          add({ ...t, album: { name: al.name, images: al.images, release_date: al.release_date } })
+        }
+      }
+      if (items.length < 50) break
+    }
+  } catch (err) {
+    console.warn('saved albums unavailable:', err.message)
+  }
+
+  // Artists you follow feed the expansion below even if none of their tracks
+  // are saved yet.
+  const followed = []
+  try {
+    let after = null
+    for (let page = 0; page < 4; page++) {
+      const q = after ? `&after=${encodeURIComponent(after)}` : ''
+      const r = await api(`/me/following?type=artist&limit=50${q}`)
+      const items = r?.artists?.items || []
+      for (const a of items) if (a?.id) followed.push(a.id)
+      after = r?.artists?.cursors?.next
+      if (!after || items.length < 50) break
+    }
+    console.log(`following ${followed.length} artists`)
+  } catch (err) {
+    console.warn('followed artists unavailable:', err.message)
+  }
+
+  // The big one: pull each artist's top tracks. Single-artist endpoints are not
+  // barred for this app even though the batch form is, and this stays personal
+  // because the artists come from your own library and follows.
+  try {
+    const freq = new Map()
+    for (const t of tracks.values()) {
+      for (const a of t.artists || []) {
+        if (a?.id) freq.set(a.id, (freq.get(a.id) || 0) + 1)
+      }
+    }
+    for (const id of followed) freq.set(id, (freq.get(id) || 0) + 3)
+
+    const ranked = [...freq.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id)
+    const ARTIST_CAP = 120
+    const targets = ranked.slice(0, ARTIST_CAP)
+
+    if (ranked.length > ARTIST_CAP) {
+      console.warn(`expanding only the top ${ARTIST_CAP} of ${ranked.length} artists`)
+    }
+
+    let done = 0
+    for (const id of targets) {
+      if (tracks.size >= MAX_TRACKS) break
+      done++
+      if (done % 5 === 1) progress(`Adding more by your artists… (${done}/${targets.length} · ${tracks.size} found)`)
+      try {
+        // market is optional with a user token but some accounts 400 without
+        // it, so pass the profile country when we know it.
+        const mk = profile?.country ? `?market=${profile.country}` : ""
+        const r = await api(`/artists/${id}/top-tracks${mk}`)
+        for (const t of r?.tracks || []) add(t)
+      } catch (err) {
+        if (err.status === 403 || err.status === 404) {
+          console.warn('artist top-tracks is barred for this app; stopping expansion.')
+          break
+        }
+      }
+    }
+    console.log(`expanded ${done} artists`)
+  } catch (err) {
+    console.warn('artist expansion failed:', err.message)
+  }
+
   if (tracks.size >= MAX_TRACKS) {
     console.warn(`hit the ${MAX_TRACKS}-track scan cap — some sources were not fully read`)
   }
+  console.log(`scanned ${tracks.size} tracks total`)
 
   if (!tracks.size) throw new Error('Spotify returned no tracks for your account.')
 
@@ -1311,8 +1407,8 @@ async function boot() {
     $('app').innerHTML = `
       <div class="card" style="text-align:center">
         <p class="note" style="margin:0 0 16px">
-          Songless now also reads your <b>playlists</b> and <b>recently played</b>
-          to build a bigger catalog, which needs fresh permission from Spotify.
+          Songless now reads more of your library — saved albums, artists you follow
+          and more of your top tracks — which needs fresh permission from Spotify.
         </p>
         <button class="btn-wide btn-primary" id="btn-reconsent">Reconnect Spotify</button>
       </div>`
