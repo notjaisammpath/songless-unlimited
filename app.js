@@ -40,6 +40,33 @@ const SOURCES = [
 
 let pendingSources = null
 
+// What each source actually holds, so the chips state a real size instead of
+// a number from a previous run. Two limit=1 calls, cached for the session.
+let sourceTotals = null
+
+async function fetchSourceTotals() {
+  if (sourceTotals) return sourceTotals
+  const t = {}
+  try { t.saved = (await api('/me/tracks?limit=1'))?.total } catch {}
+  try { t.albums = (await api('/me/albums?limit=1'))?.total } catch {}
+  sourceTotals = t
+  return t
+}
+
+// Fixed ceilings: neither endpoint reports a total.
+const SOURCE_HINT = {
+  top: 'up to ~300',
+  recent: 'up to 50',
+}
+
+function sourceSize(key) {
+  if (SOURCE_HINT[key]) return SOURCE_HINT[key]
+  if (!sourceTotals) return '…'
+  if (key === 'saved') return sourceTotals.saved == null ? 'unavailable' : `${sourceTotals.saved} songs`
+  if (key === 'albums') return sourceTotals.albums == null ? 'unavailable' : `${sourceTotals.albums} albums`
+  return ''
+}
+
 function loadSources() {
   try {
     const v = JSON.parse(localStorage.getItem(K_SOURCES))
@@ -301,7 +328,8 @@ async function buildCatalog() {
 
   const chosen = loadSources()
   const use = k => chosen.includes(k)
-  // Tracks contributed per source, so Settings can show what each one is worth.
+  // Tracks contributed per source. Diagnostic only — Settings reports each
+  // source's real size instead, which is useful before a build rather than after.
   const contributed = {}
   let mark = 0
   const tally = k => { contributed[k] = tracks.size - mark }
@@ -1217,10 +1245,9 @@ function settingsHtml() {
     <div class="srcs">
       ${SOURCES.map(src => {
         const on = pendingSources.includes(src.key)
-        const n = c?.contributed?.[src.key]
         return `<button class="src ${on ? 'on' : ''}" data-k="${src.key}" aria-pressed="${on}">
           <b>${esc(src.label)}</b>
-          <span>${n == null ? 'not scanned' : `+${n} last time`}</span>
+          <span>${esc(sourceSize(src.key))}</span>
         </button>`
       }).join('')}
     </div>
@@ -1283,10 +1310,17 @@ function afterCatalog() {
 async function boot() {
   $('btn-stats').onclick = () => openModal(statsHtml())
   $('btn-how').onclick = () => openModal(HOW_HTML)
-  $('btn-settings').onclick = () => {
+  $('btn-settings').onclick = async () => {
     pendingSources = loadSources()
     openModal(settingsHtml())
     wireSettings()
+
+    await fetchSourceTotals()
+    // Only redraw if Settings is still the thing on screen.
+    if (!$('modal').hidden && $('s-rebuild')) {
+      openModal(settingsHtml())
+      wireSettings()
+    }
   }
   $('modal-close').onclick = () => { $('modal').hidden = true }
   $('modal').onclick = e => { if (e.target.id === 'modal') $('modal').hidden = true }
