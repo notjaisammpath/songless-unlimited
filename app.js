@@ -61,6 +61,10 @@ let isPlaying = false
 let profile = null
 let bootPhase = 'starting up'
 let playbackErrors = 0
+let userVolume = 0.75
+let prepared = false
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
 
 // Spotify's Web Playback SDK supports Chrome, Edge and Safari. Firefox's
 // Widevine CDM gets rejected at the license endpoint with a 403, so playback
@@ -467,6 +471,42 @@ function setIcon(playing) {
   if (el) el.innerHTML = playing ? ICON_STOP : ICON_PLAY
 }
 
+/**
+ * Load the track and leave it paused at 0:00 so the first clip starts almost
+ * instantly. Without this, Spotify's start-up latency (easily >100ms) swallows
+ * the whole 0.1s stage. Done muted so the priming playback is inaudible.
+ */
+async function prepareTrack() {
+  prepared = false
+  if (!playerReady || !deviceId || !song) return
+
+  const my = gen
+  try {
+    await player.setVolume(0)
+    await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
+    })
+
+    // Wait for the stream to actually begin before pausing it.
+    for (let i = 0; i < 80; i++) {
+      if (my !== gen) return
+      const st = await player.getCurrentState().catch(() => null)
+      if (st && !st.paused && st.position > 0) break
+      await sleep(50)
+    }
+
+    if (my !== gen) return
+    await player.pause()
+    await player.seek(0)
+    prepared = true
+  } catch (err) {
+    console.warn('pre-buffer failed; falling back to cold start', err.message)
+  } finally {
+    try { await player.setVolume(userVolume) } catch {}
+  }
+}
+
 /** Play the real track from 0:00 and cut it off at `seconds`. */
 async function playClip(seconds) {
   if (!playerReady || !deviceId) { toast('Player not ready yet'); return }
@@ -475,10 +515,16 @@ async function playClip(seconds) {
   stopPolling()
 
   try {
-    await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
-    })
+    if (prepared) {
+      // Already buffered and parked at 0:00 — resume is near-instant.
+      await player.seek(0)
+      await player.resume()
+    } else {
+      await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
+      })
+    }
   } catch (err) {
     // 404 NO_ACTIVE_DEVICE: transfer to our device, then retry once.
     if (/404|device/i.test(err.message)) {
@@ -506,6 +552,8 @@ async function playClip(seconds) {
     stopPolling()
     isPlaying = false
     try { await player.pause() } catch {}
+    // Park back at 0:00 so the next, longer clip is also primed.
+    try { await player.seek(0); prepared = true } catch { prepared = false }
     setIcon(false)
     const bar = document.querySelector('.played')
     if (bar) bar.style.width = '0%'
@@ -525,7 +573,15 @@ async function playClip(seconds) {
 
     if (t0 === null && st.position > 0) {
       t0 = performance.now() - st.position
-      cutId = setTimeout(cut, Math.max(20, limit - st.position))
+      const remaining = limit - st.position
+      if (remaining <= 0) {
+        // Start-up latency already overran this stage. Give it a short audible
+        // floor rather than cutting instantly and playing nothing at all.
+        console.warn(`stage ${seconds}s: first position report was ${st.position}ms`)
+        cutId = setTimeout(cut, 60)
+      } else {
+        cutId = setTimeout(cut, remaining)
+      }
     }
 
     const elapsed = t0 === null ? st.position : performance.now() - t0
@@ -768,7 +824,7 @@ function render() {
           <div class="meta-row">
             <span><b style="color:var(--gold)">${fmt(unlocked())}s</b> from the top · ${MAX_ATTEMPTS - guesses.length} ${MAX_ATTEMPTS - guesses.length === 1 ? 'try' : 'tries'} left</span>
             <span class="vol"><span aria-hidden="true">🔊</span>
-              <input type="range" id="vol" min="0" max="1" step="0.01" value="0.75" aria-label="Volume"></span>
+              <input type="range" id="vol" min="0" max="1" step="0.01" value="${userVolume}" aria-label="Volume"></span>
           </div>
         </div>
       </div>
@@ -798,7 +854,10 @@ function render() {
   $('btn-play').onclick = togglePlay
   $('btn-skip').onclick = doSkip
   $('btn-submit').onclick = submitGuess
-  $('vol').oninput = e => { if (player) player.setVolume(Number(e.target.value)).catch(() => {}) }
+  $('vol').oninput = e => {
+    userVolume = Number(e.target.value)
+    if (player) player.setVolume(userVolume).catch(() => {})
+  }
 
   const input = $('guess')
   input.oninput = onInput
@@ -932,6 +991,7 @@ function newRound() {
   lastSuggestions = []
   song = nextFromBag()
   render()
+  prepareTrack()
 }
 
 function share() {
