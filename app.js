@@ -61,6 +61,10 @@ let isPlaying = false
 let profile = null
 let bootPhase = 'starting up'
 let playbackErrors = 0
+// Set once audio has demonstrably come out of the speakers. The DRM wall is
+// only ever correct when NOTHING has played — otherwise a stray transport
+// error would tear down a working game.
+let everPlayed = false
 let userVolume = 0.75
 let prepared = false
 let priming = null   // in-flight prepareTrack(), so plays can wait it out
@@ -436,11 +440,18 @@ async function initPlayer() {
     // licence failure — escalating it to the DRM screen would be wrong.
     if (/not allowed/i.test(message || '')) return
     playbackErrors++
-    // The SDK retries the licence request in a loop; one toast per attempt is
-    // noise. After a couple of failures, say what is actually wrong.
+
+    // Audio has worked before, so this is a transient hiccup, not a licence
+    // problem. Never replace the UI over it.
+    if (everPlayed) {
+      if (playbackErrors % 4 === 1) toast('Playback hiccup — press play again', 2500)
+      return
+    }
+
+    // Nothing has ever played: the licence really may be refused.
     if (playbackErrors === 1) {
       toast('Playback error — check Spotify isn\'t playing elsewhere', 3000)
-    } else if (playbackErrors === 3) {
+    } else if (playbackErrors >= 4) {
       renderDrmWall()
     }
   })
@@ -498,7 +509,7 @@ async function prepareTrack() {
       // Wait for the stream to actually begin before pausing it.
       for (let i = 0; i < 80; i++) {
         const st = await player.getCurrentState().catch(() => null)
-        if (st && !st.paused && st.position > 0) break
+        if (st && !st.paused && st.position > 0) { everPlayed = true; playbackErrors = 0; break }
         await sleep(50)
       }
     } catch (err) {
@@ -600,6 +611,9 @@ async function playClip(seconds) {
     if (!st) return
 
     if (t0 === null && st.position > 0) {
+      // Real audio position advanced — playback works.
+      everPlayed = true
+      playbackErrors = 0
       t0 = performance.now() - st.position
       const remaining = limit - st.position
       if (remaining <= 0) {
