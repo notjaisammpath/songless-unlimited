@@ -114,7 +114,10 @@ const norm = s => (s || '')
   .replace(/[^a-z0-9]+/g, ' ')
   .trim()
 
-const label = s => `${s.artist} — ${s.title}`
+// Guess rows and the search box show the primary artist only — full credits
+// like "Domo Genesis, The Alchemist, Earl Sweatshirt" are unreadable in a row.
+// The reveal still shows everyone.
+const label = s => `${s.primaryArtist || s.artist} — ${s.title}`
 const unlocked = () => STAGES[Math.min(guesses.length, MAX_ATTEMPTS - 1)]
 
 function esc(str) {
@@ -1077,7 +1080,7 @@ function onInput() {
 
   lastSuggestions = [...starts, ...contains].slice(0, 8)
   box.innerHTML = lastSuggestions
-    .map((s, i) => `<div data-i="${i}"><span>${esc(s.title)}</span> <span class="ar">— ${esc(s.artist)}</span></div>`)
+    .map((s, i) => `<div data-i="${i}"><span>${esc(s.title)}</span> <span class="ar">— ${esc(s.primaryArtist || s.artist)}</span></div>`)
     .join('')
   for (const el of box.children) el.onclick = () => pick(Number(el.dataset.i))
   $('btn-submit').disabled = !lastSuggestions.length
