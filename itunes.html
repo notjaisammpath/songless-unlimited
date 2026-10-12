@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Songless Unlimited</title>
+<style>
+  :root {
+    --bg: #0c0b10;
+    --bg-2: #15131c;
+    --card: #1b1825;
+    --line: #2e2940;
+    --line-2: #413a58;
+    --text: #f3f0f7;
+    --dim: #a79fbd;
+    --dimmer: #6f6886;
+    --gold: #f0b429;
+    --gold-dim: #8a6514;
+    --green: #35c46b;
+    --red: #e4474f;
+    --amber: #e8a33d;
+    --radius: 14px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #1d1830 0%, var(--bg) 55%) no-repeat, var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    padding-block: 24px 48px;
+    padding-left: 18px;
+    padding-right: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 540px; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header { text-align: center; margin-bottom: 22px; }
+
+  h1 {
+    font-size: clamp(1.5rem, 6vw, 2rem);
+    margin: 0 0 6px;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+  }
+  h1 .mark { color: var(--gold); }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 0.73rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--gold);
+    background: rgba(240,180,41,0.1);
+    border: 1px solid rgba(240,180,41,0.28);
+    padding: 5px 11px; border-radius: 999px;
+  }
+
+  .toolbar {
+    display: flex; justify-content: center; gap: 8px; margin-top: 14px;
+  }
+
+  /* ---------- buttons ---------- */
+  button {
+    font-family: inherit; font-size: 0.9rem; font-weight: 600;
+    color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 16px; cursor: pointer;
+    transition: background .14s, border-color .14s, transform .06s;
+  }
+  button:hover:not(:disabled) { background: #221e2f; border-color: var(--line-2); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .42; cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .btn-sm { padding: 7px 12px; font-size: 0.8rem; }
+  .btn-primary {
+    background: var(--gold); color: #241a02; border-color: var(--gold);
+    font-weight: 800;
+  }
+  .btn-primary:hover:not(:disabled) { background: #f7c33f; border-color: #f7c33f; }
+  .btn-wide { width: 100%; }
+
+  /* ---------- card ---------- */
+  .card {
+    background: linear-gradient(180deg, var(--card), var(--bg-2));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 18px 50px -24px rgba(0,0,0,.85);
+  }
+
+  /* ---------- player ---------- */
+  .player { display: flex; align-items: center; gap: 14px; }
+
+  .play-btn {
+    flex: 0 0 auto;
+    width: 60px; height: 60px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--gold); border: none; color: #241a02;
+    padding: 0;
+  }
+  .play-btn:hover:not(:disabled) { background: #f7c33f; }
+  .play-btn svg { width: 25px; height: 25px; display: block; }
+
+  .timeline { flex: 1 1 auto; min-width: 0; }
+
+  .track {
+    position: relative; height: 10px; border-radius: 999px;
+    background: #272235; overflow: hidden;
+  }
+  .track .unlocked {
+    position: absolute; inset-block: 0; left: 0;
+    background: linear-gradient(90deg, var(--gold-dim), rgba(240,180,41,.45));
+    transition: width .35s cubic-bezier(.2,.8,.2,1);
+  }
+  .track .played {
+    position: absolute; inset-block: 0; left: 0;
+    background: var(--gold);
+    width: 0;
+  }
+  .ticks { position: relative; height: 15px; margin-top: 5px; }
+  .ticks span {
+    position: absolute; top: 0; transform: translateX(-50%);
+    font-size: 0.62rem; color: var(--dimmer); font-family: var(--mono);
+  }
+  .ticks span.on { color: var(--gold); font-weight: 700; }
+
+  .meta-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 9px; font-size: 0.78rem; color: var(--dim);
+  }
+  .vol { display: flex; align-items: center; gap: 6px; }
+  .vol input { width: 76px; accent-color: var(--gold); }
+
+  /* ---------- guesses ---------- */
+  .guesses { margin: 18px 0 0; display: grid; gap: 7px; }
+
+  .slot {
+    display: flex; align-items: center; gap: 10px;
+    min-height: 42px; padding: 0 13px;
+    border: 1px solid var(--line); border-radius: 9px;
+    background: rgba(255,255,255,.015);
+    font-size: 0.86rem; color: var(--dimmer);
+  }
+  .slot.filled { color: var(--text); background: rgba(255,255,255,.04); }
+  .slot .ic { flex: 0 0 auto; font-size: 0.95rem; line-height: 1; }
+  .slot .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot.wrong { border-color: rgba(228,71,79,.4); }
+  .slot.wrong .ic { color: var(--red); }
+  .slot.skip { border-color: rgba(232,163,61,.38); }
+  .slot.skip .ic { color: var(--amber); }
+  .slot.correct { border-color: rgba(53,196,107,.55); background: rgba(53,196,107,.1); }
+  .slot.correct .ic { color: var(--green); }
+  .slot.active { border-color: var(--line-2); border-style: dashed; }
+
+  /* ---------- input ---------- */
+  .guess-area { margin-top: 16px; position: relative; }
+
+  input[type=text] {
+    width: 100%; font-family: inherit; font-size: 0.95rem;
+    color: var(--text); background: #100e17;
+    border: 1px solid var(--line-2); border-radius: 10px;
+    padding: 13px 14px;
+  }
+  input[type=text]::placeholder { color: var(--dimmer); }
+  input[type=text]:focus { outline: none; border-color: var(--gold); }
+
+  .suggest {
+    position: absolute; left: 0; right: 0; bottom: calc(100% + 6px);
+    background: #141120; border: 1px solid var(--line-2);
+    border-radius: 10px; overflow: hidden; z-index: 30;
+    max-height: 258px; overflow-y: auto;
+    box-shadow: 0 -12px 34px -12px rgba(0,0,0,.9);
+  }
+  .suggest:empty { display: none; }
+  .suggest div {
+    padding: 10px 13px; cursor: pointer; font-size: 0.87rem;
+    border-bottom: 1px solid rgba(255,255,255,.045);
+  }
+  .suggest div:last-child { border-bottom: none; }
+  .suggest div.sel, .suggest div:hover { background: rgba(240,180,41,.14); }
+  .suggest .ar { color: var(--dim); }
+
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .actions button { flex: 1 1 0; }
+
+  /* ---------- reveal ---------- */
+  .reveal { text-align: center; }
+  .reveal .art {
+    width: 168px; height: 168px; border-radius: 12px; margin: 0 auto 16px;
+    background: #272235; object-fit: cover; display: block;
+    box-shadow: 0 14px 34px -14px rgba(0,0,0,.9);
+  }
+  .verdict {
+    font-size: 0.74rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .12em; margin-bottom: 9px;
+  }
+  .verdict.win { color: var(--green); }
+  .verdict.lose { color: var(--red); }
+  .reveal .ttl { font-size: 1.22rem; font-weight: 800; letter-spacing: -0.01em; }
+  .reveal .art-name { color: var(--gold); margin-top: 3px; font-weight: 600; }
+  .reveal .alb { color: var(--dim); font-size: 0.82rem; margin-top: 7px; }
+  .reveal audio { width: 100%; margin-top: 16px; }
+
+  /* ---------- stats ---------- */
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 9px; margin-bottom: 18px;
+  }
+  .stat { text-align: center; }
+  .stat b { display: block; font-size: 1.32rem; font-weight: 800; }
+  .stat span { font-size: 0.66rem; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; }
+
+  .dist { display: grid; gap: 5px; }
+  .dist .row { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }
+  .dist .n { width: 12px; color: var(--dim); font-family: var(--mono); }
+  .dist .bar {
+    background: var(--gold-dim); height: 19px; border-radius: 4px;
+    min-width: 22px; display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 6px; font-size: 0.7rem; font-weight: 700; color: #f6e4bb;
+  }
+  .dist .row.best .bar { background: var(--gold); color: #241a02; }
+
+  /* ---------- modal ---------- */
+  .modal {
+    position: fixed; inset: 0; background: rgba(6,5,10,.8);
+    display: grid; place-items: center; padding: 18px; z-index: 100;
+    backdrop-filter: blur(3px);
+  }
+  .modal[hidden] { display: none; }
+  .modal .inner {
+    background: var(--card); border: 1px solid var(--line-2);
+    border-radius: var(--radius); padding: 22px;
+    width: 100%; max-width: 400px;
+  }
+  .modal h2 { margin: 0 0 16px; font-size: 1.05rem; }
+
+  .note { font-size: 0.78rem; color: var(--dim); text-align: center; margin-top: 14px; line-height: 1.5; }
+  .err {
+    background: rgba(228,71,79,.1); border: 1px solid rgba(228,71,79,.35);
+    color: #ffb8bc; border-radius: 10px; padding: 13px; font-size: 0.85rem;
+    margin-bottom: 14px; line-height: 1.5;
+  }
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: var(--gold); color: #241a02; font-weight: 700; font-size: 0.85rem;
+    padding: 10px 18px; border-radius: 999px; z-index: 200;
+    box-shadow: 0 10px 30px -10px rgba(0,0,0,.8);
+  }
+  .toast[hidden] { display: none; }
+
+  .loading { text-align: center; color: var(--dim); padding: 40px 0; }
+
+  @media (max-width: 420px) {
+    .play-btn { width: 52px; height: 52px; }
+    .reveal .art { width: 136px; height: 136px; }
+    .stat b { font-size: 1.1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Songless <span class="mark">Unlimited</span></h1>
+    <div class="badge">🎤 Hip-Hop &amp; Rap</div>
+    <div class="toolbar">
+      <button class="btn-sm" id="btn-stats">Stats</button>
+      <button class="btn-sm" id="btn-how">How to play</button>
+    </div>
+  </header>
+
+  <div id="app"><div class="loading">Loading catalog…</div></div>
+
+  <p class="note" id="foot"></p>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="inner">
+    <div id="modal-body"></div>
+    <button class="btn-wide" id="modal-close" style="margin-top:16px">Close</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+'use strict'
+
+/* ============================ constants ============================ */
+
+const STAGES = [0.1, 0.5, 1, 2, 4, 7, 11, 16]   // seconds unlocked per attempt
+const MAX_ATTEMPTS = STAGES.length
+const FULL = STAGES[STAGES.length - 1]
+
+// Seconds -> label. Sub-second stages need a decimal; whole ones shouldn't show one.
+const fmt = s => (s < 1 ? s.toFixed(1) : String(s))
+
+// The ladder spans 0.1s to 16s, so a linear timeline would squash the early
+// stages into an invisible sliver. Square-root scaling gives them real width.
+const scale = t => Math.sqrt(Math.max(0, t) / FULL) * 100
+const STORE_KEY = 'songless-unlimited-stats-v1'
+const BAG_KEY = 'songless-unlimited-bag-v1'
+
+/* ============================ state ============================ */
+
+let CATALOG = []
+let song = null
+let guesses = []          // {label, trackId, kind:'wrong'|'skip'|'correct'}
+let finished = false
+let won = false
+let selIdx = -1
+let lastSuggestions = []
+
+const audio = new Audio()
+audio.preload = 'auto'
+let rafId = null
+let cutId = null
+let stopAt = 0
+
+const $ = id => document.getElementById(id)
+
+/* ============================ helpers ============================ */
+
+const norm = s => (s || '')
+  .toLowerCase()
+  .normalize('NFKD')
+  .replace(/[̀-ͯ]/g, '')
+  .replace(/\(.*?\)|\[.*?\]/g, ' ')
+  .replace(/&/g, ' and ')
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim()
+
+const label = s => `${s.artist} — ${s.title}`
+const unlocked = () => STAGES[Math.min(guesses.length, MAX_ATTEMPTS - 1)]
+const bigArt = u => (u || '').replace(/\/\d+x\d+bb\./, '/600x600bb.')
+
+function toast(msg) {
+  const t = $('toast')
+  t.textContent = msg
+  t.hidden = false
+  clearTimeout(toast._t)
+  toast._t = setTimeout(() => { t.hidden = true }, 1900)
+}
+
+/* ============================ stats ============================ */
+
+function loadStats() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY) || '')
+    if (s && typeof s === 'object') {
+      return { played: 0, wins: 0, streak: 0, best: 0, dist: Array(MAX_ATTEMPTS).fill(0), ...s }
+    }
+  } catch {}
+  return { played: 0, wins: 0, streak: 0, best: 0, dist: Array(MAX_ATTEMPTS).fill(0) }
+}
+
+function saveStats(s) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(s)) } catch {}
+}
+
+function recordResult(didWin, attempts) {
+  const s = loadStats()
+  s.played++
+  if (didWin) {
+    s.wins++
+    s.streak++
+    s.best = Math.max(s.best, s.streak)
+    s.dist[attempts - 1] = (s.dist[attempts - 1] || 0) + 1
+  } else {
+    s.streak = 0
+  }
+  saveStats(s)
+}
+
+/* ============================ song selection ============================ */
+
+// Shuffle bag: play through the whole catalog before any repeats.
+function nextFromBag(pool = CATALOG) {
+  let bag = []
+  try { bag = JSON.parse(localStorage.getItem(BAG_KEY) || '[]') } catch {}
+  bag = Array.isArray(bag) ? bag.filter(id => pool.some(s => s.trackId === id)) : []
+
+  if (!bag.length) {
+    bag = pool.map(s => s.trackId)
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[bag[i], bag[j]] = [bag[j], bag[i]]
+    }
+    // Avoid immediately repeating the song we just played.
+    if (song && bag.length > 1 && bag[bag.length - 1] === song.trackId) {
+      ;[bag[0], bag[bag.length - 1]] = [bag[bag.length - 1], bag[0]]
+    }
+  }
+
+  const id = bag.pop()
+  try { localStorage.setItem(BAG_KEY, JSON.stringify(bag)) } catch {}
+  return pool.find(s => s.trackId === id) || pool[0]
+}
+
+/* ============================ audio ============================ */
+
+function stopAudio() {
+  audio.pause()
+  if (rafId) cancelAnimationFrame(rafId)
+  rafId = null
+  if (cutId) clearTimeout(cutId)
+  cutId = null
+  const p = document.querySelector('.played')
+  if (p) p.style.width = '0%'
+  const b = $('play-ic')
+  if (b) b.innerHTML = ICON_PLAY
+}
+
+function tick() {
+  const p = document.querySelector('.played')
+  if (p) p.style.width = `${Math.min(100, scale(audio.currentTime))}%`
+  if (audio.currentTime >= stopAt) {
+    stopAudio()
+    return
+  }
+  rafId = requestAnimationFrame(tick)
+}
+
+function playClip(seconds) {
+  stopAudio()
+  stopAt = seconds
+  // Setting currentTime before any data has loaded throws in some browsers.
+  if (audio.readyState > 0) {
+    try { audio.currentTime = 0 } catch {}
+  }
+  audio.play().then(() => {
+    $('play-ic').innerHTML = ICON_STOP
+    // A 0.1s clip is ~6 animation frames, so rAF alone can overshoot by 15%+.
+    // Timer does the cut; rAF only drives the progress bar.
+    cutId = setTimeout(stopAudio, Math.max(30, seconds * 1000))
+    rafId = requestAnimationFrame(tick)
+  }).catch(err => {
+    toast('Could not play audio')
+    console.error('playback failed', err)
+  })
+}
+
+function togglePlay() {
+  if (!audio.paused) { stopAudio(); return }
+  playClip(unlocked())
+}
+
+// If a baked-in preview URL has rotated, re-resolve it live by trackId.
+async function repairPreview(s) {
+  try {
+    const r = await fetch(`https://itunes.apple.com/lookup?id=${encodeURIComponent(s.trackId)}&entity=song`)
+    const j = await r.json()
+    const hit = (j.results || []).find(x => x.previewUrl)
+    if (hit && hit.previewUrl) {
+      s.previewUrl = hit.previewUrl
+      return true
+    }
+  } catch (err) {
+    console.error('repair failed', err)
+  }
+  return false
+}
+
+/* ============================ icons ============================ */
+
+const ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.87l10-6.5a1 1 0 0 0 0-1.74l-10-6.5A1 1 0 0 0 8 5.5Z"/></svg>'
+const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
+
+/* ============================ rendering ============================ */
+
+function render() {
+  const app = $('app')
+
+  if (finished) { renderReveal(app); return }
+
+  const pct = scale(unlocked())
+
+  app.innerHTML = `
+    <div class="card">
+      <div class="player">
+        <button class="play-btn" id="btn-play" aria-label="Play clip">
+          <span id="play-ic">${ICON_PLAY}</span>
+        </button>
+        <div class="timeline">
+          <div class="track">
+            <div class="unlocked" style="width:${pct}%"></div>
+            <div class="played"></div>
+          </div>
+          <div class="ticks">
+            ${STAGES.map(s => `<span class="${s <= unlocked() ? 'on' : ''}" style="left:${scale(s)}%">${fmt(s)}s</span>`).join('')}
+          </div>
+          <div class="meta-row">
+            <span><b style="color:var(--gold)">${fmt(unlocked())}s</b> unlocked &middot; ${MAX_ATTEMPTS - guesses.length} ${MAX_ATTEMPTS - guesses.length === 1 ? 'try' : 'tries'} left</span>
+            <span class="vol">
+              <span aria-hidden="true">🔊</span>
+              <input type="range" id="vol" min="0" max="1" step="0.01" value="${audio.volume}" aria-label="Volume">
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="guesses">
+        ${Array.from({ length: MAX_ATTEMPTS }, (_, i) => {
+          const g = guesses[i]
+          if (g) {
+            const ic = g.kind === 'correct' ? '✔' : g.kind === 'skip' ? '⏭' : '✕'
+            return `<div class="slot filled ${g.kind}"><span class="ic">${ic}</span><span class="txt">${esc(g.label)}</span></div>`
+          }
+          const active = i === guesses.length
+          return `<div class="slot ${active ? 'active' : ''}"><span class="ic">${active ? '▸' : ''}</span><span class="txt">${active ? 'Your guess…' : ''}</span></div>`
+        }).join('')}
+      </div>
+
+      <div class="guess-area">
+        <div class="suggest" id="suggest"></div>
+        <input type="text" id="guess" autocomplete="off" spellcheck="false"
+               placeholder="Type an artist or song title…">
+        <div class="actions">
+          <button id="btn-skip">Skip (+${fmt(nextGain())}s)</button>
+          <button class="btn-primary" id="btn-submit" disabled>Submit</button>
+        </div>
+      </div>
+    </div>
+  `
+
+  $('btn-play').onclick = togglePlay
+  $('btn-skip').onclick = doSkip
+  $('btn-submit').onclick = submitGuess
+  $('vol').oninput = e => { audio.volume = Number(e.target.value) }
+
+  const input = $('guess')
+  input.oninput = onInput
+  input.onkeydown = onKeyDown
+  input.focus()
+}
+
+function nextGain() {
+  const i = guesses.length
+  const cur = STAGES[Math.min(i, MAX_ATTEMPTS - 1)]
+  const nxt = STAGES[Math.min(i + 1, MAX_ATTEMPTS - 1)]
+  return Math.round((nxt - cur) * 10) / 10
+}
+
+function renderReveal(app) {
+  const s = loadStats()
+  app.innerHTML = `
+    <div class="card reveal">
+      <img class="art" id="art" alt="" src="${esc(bigArt(song.artworkUrl))}">
+      <div class="verdict ${won ? 'win' : 'lose'}">
+        ${won ? `Got it in ${guesses.length} ${guesses.length === 1 ? 'try' : 'tries'}` : 'Out of tries'}
+      </div>
+      <div class="ttl">${esc(song.title)}</div>
+      <div class="art-name">${esc(song.artist)}</div>
+      <div class="alb">${esc(song.album || '')}${song.year ? ` &middot; ${song.year}` : ''}</div>
+      <audio controls src="${esc(song.previewUrl)}" style="margin-top:16px"></audio>
+      <div class="actions" style="margin-top:16px">
+        <button id="btn-share">Share</button>
+        <button class="btn-primary" id="btn-next">Next song</button>
+      </div>
+      <p class="note">
+        Streak <b style="color:var(--gold)">${s.streak}</b> &middot;
+        ${s.wins}/${s.played} solved
+      </p>
+    </div>
+  `
+  $('art').onerror = e => { e.target.style.visibility = 'hidden' }
+  $('btn-next').onclick = newRound
+  $('btn-share').onclick = share
+}
+
+function esc(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+}
+
+/* ============================ autocomplete ============================ */
+
+function onInput() {
+  const q = norm($('guess').value)
+  const box = $('suggest')
+  selIdx = -1
+
+  if (q.length < 2) {
+    box.innerHTML = ''
+    lastSuggestions = []
+    $('btn-submit').disabled = true
+    return
+  }
+
+  const starts = [], contains = []
+  for (const s of CATALOG) {
+    const hay = s._search
+    const i = hay.indexOf(q)
+    if (i === 0) starts.push(s)
+    else if (i > 0) contains.push(s)
+    if (starts.length >= 60) break
+  }
+
+  lastSuggestions = [...starts, ...contains].slice(0, 8)
+  box.innerHTML = lastSuggestions
+    .map((s, i) => `<div data-i="${i}"><span>${esc(s.title)}</span> <span class="ar">— ${esc(s.artist)}</span></div>`)
+    .join('')
+
+  for (const el of box.children) {
+    el.onclick = () => pick(Number(el.dataset.i))
+  }
+
+  $('btn-submit').disabled = lastSuggestions.length === 0
+}
+
+function pick(i) {
+  const s = lastSuggestions[i]
+  if (!s) return
+  $('guess').value = label(s)
+  $('suggest').innerHTML = ''
+  lastSuggestions = [s]
+  selIdx = 0
+  $('btn-submit').disabled = false
+  submitGuess()
+}
+
+function onKeyDown(e) {
+  const box = $('suggest')
+  const n = box.children.length
+
+  if (e.key === 'ArrowDown' && n) {
+    e.preventDefault()
+    selIdx = (selIdx + 1) % n
+    highlight()
+  } else if (e.key === 'ArrowUp' && n) {
+    e.preventDefault()
+    selIdx = selIdx <= 0 ? n - 1 : selIdx - 1
+    highlight()
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (selIdx >= 0) pick(selIdx)
+    else submitGuess()
+  } else if (e.key === 'Escape') {
+    box.innerHTML = ''
+    selIdx = -1
+  }
+}
+
+function highlight() {
+  const box = $('suggest')
+  for (const [i, el] of [...box.children].entries()) {
+    el.classList.toggle('sel', i === selIdx)
+  }
+}
+
+/* ============================ game actions ============================ */
+
+function submitGuess() {
+  if (finished) return
+
+  const raw = $('guess').value.trim()
+  if (!raw) { toast('Type a guess, or hit Skip'); return }
+
+  // Resolve the typed text to a catalog entry.
+  const q = norm(raw)
+  let guessed = lastSuggestions.find(s => norm(label(s)) === q)
+    || CATALOG.find(s => norm(label(s)) === q)
+    || CATALOG.find(s => s._search === q)
+    || (lastSuggestions.length === 1 ? lastSuggestions[0] : null)
+
+  if (!guessed) {
+    toast('Pick a song from the list')
+    return
+  }
+
+  const correct = guessed.trackId === song.trackId
+    || norm(guessed.title) === norm(song.title) && norm(guessed.artist) === norm(song.artist)
+
+  guesses.push({ label: label(guessed), trackId: guessed.trackId, kind: correct ? 'correct' : 'wrong' })
+
+  if (correct) {
+    finish(true)
+  } else if (guesses.length >= MAX_ATTEMPTS) {
+    finish(false)
+  } else {
+    render()
+    playClip(unlocked())
+  }
+}
+
+function doSkip() {
+  if (finished) return
+  guesses.push({ label: `Skipped (+${fmt(nextGain())}s)`, trackId: null, kind: 'skip' })
+  if (guesses.length >= MAX_ATTEMPTS) {
+    finish(false)
+  } else {
+    render()
+    playClip(unlocked())
+  }
+}
+
+function finish(didWin) {
+  finished = true
+  won = didWin
+  stopAudio()
+  recordResult(didWin, guesses.length)
+  render()
+}
+
+const dead = new Set()   // trackIds whose preview failed this session
+
+async function newRound(attempt = 0) {
+  stopAudio()
+  guesses = []
+  finished = false
+  won = false
+  selIdx = -1
+  lastSuggestions = []
+
+  // Give up rotating after a handful of dead tracks rather than recursing forever.
+  if (attempt >= 6) {
+    $('app').innerHTML = `
+      <div class="card">
+        <div class="err"><b>Could not load any playable track.</b><br>
+        Several previews in a row failed, which usually means no internet
+        connection or Apple's preview CDN is unreachable.</div>
+        <button class="btn-wide btn-primary" onclick="location.reload()">Retry</button>
+      </div>`
+    return
+  }
+
+  const pool = CATALOG.filter(s => !dead.has(s.trackId))
+  song = nextFromBag(pool.length ? pool : CATALOG)
+  audio.src = song.previewUrl
+
+  render()
+
+  // Verify the clip is actually loadable; repair or rotate past it if not.
+  const ok = await new Promise(res => {
+    let settled = false
+    const done = v => { if (!settled) { settled = true; res(v) } }
+    audio.addEventListener('canplay', () => done(true), { once: true })
+    audio.addEventListener('error', () => done(false), { once: true })
+    setTimeout(() => done(!!audio.duration), 7000)
+  })
+
+  if (!ok) {
+    const fixed = await repairPreview(song)
+    if (fixed) {
+      audio.src = song.previewUrl
+    } else {
+      console.warn('dropping unplayable track', song)
+      dead.add(song.trackId)
+      toast('Skipping an unplayable track…')
+      return newRound(attempt + 1)
+    }
+  }
+}
+
+function share() {
+  const grid = guesses.map(g => g.kind === 'correct' ? '🟩' : g.kind === 'skip' ? '🟨' : '🟥').join('')
+  const pad = '⬛'.repeat(Math.max(0, MAX_ATTEMPTS - guesses.length))
+  const text = `🎤 Songless Unlimited — Hip-Hop/Rap\n${won ? `${guesses.length}/${MAX_ATTEMPTS}` : 'X/' + MAX_ATTEMPTS} ${grid}${pad}\n\n${location.href.split('#')[0]}#t=${song.trackId}`
+
+  navigator.clipboard?.writeText(text)
+    .then(() => toast('Result + challenge link copied'))
+    .catch(() => toast('Copy failed'))
+}
+
+/* ============================ modals ============================ */
+
+function openModal(html) {
+  $('modal-body').innerHTML = html
+  $('modal').hidden = false
+}
+
+function statsHtml() {
+  const s = loadStats()
+  const rate = s.played ? Math.round((s.wins / s.played) * 100) : 0
+  const max = Math.max(1, ...s.dist)
+  return `
+    <h2>Your stats</h2>
+    <div class="stat-grid">
+      <div class="stat"><b>${s.played}</b><span>Played</span></div>
+      <div class="stat"><b>${rate}%</b><span>Win rate</span></div>
+      <div class="stat"><b>${s.streak}</b><span>Streak</span></div>
+      <div class="stat"><b>${s.best}</b><span>Best</span></div>
+    </div>
+    <div class="dist">
+      ${s.dist.map((n, i) => `
+        <div class="row ${n === max && n > 0 ? 'best' : ''}">
+          <span class="n">${i + 1}</span>
+          <div class="bar" style="width:${Math.max(8, (n / max) * 100)}%">${n}</div>
+        </div>`).join('')}
+    </div>
+    <p class="note">Wins by number of tries. ${CATALOG.length} songs in the catalog.</p>
+  `
+}
+
+const HOW_HTML = `
+  <h2>How to play</h2>
+  <p style="font-size:.88rem;line-height:1.65;color:var(--dim)">
+    You get <b style="color:var(--text)">${MAX_ATTEMPTS} tries</b> to name the track.
+    Press play and you hear the first <b style="color:var(--text)">0.1 seconds</b>.
+    Every wrong guess or skip unlocks more:
+    <b style="color:var(--gold)">${STAGES.map(fmt).join('s → ')}s</b>.
+  </p>
+  <p style="font-size:.88rem;line-height:1.65;color:var(--dim)">
+    Start typing to search the catalog — you have to pick a song from the
+    dropdown for it to count. Arrow keys and Enter work.
+  </p>
+  <p style="font-size:.88rem;line-height:1.65;color:var(--dim)">
+    Everything is hip-hop and rap, and it never runs out. <b style="color:var(--text)">Share</b>
+    copies your result plus a link that drops a friend on the exact same song.
+  </p>
+`
+
+/* ============================ boot ============================ */
+
+async function boot() {
+  $('btn-stats').onclick = () => openModal(statsHtml())
+  $('btn-how').onclick = () => openModal(HOW_HTML)
+  $('modal-close').onclick = () => { $('modal').hidden = true }
+  $('modal').onclick = e => { if (e.target.id === 'modal') $('modal').hidden = true }
+
+  let data
+  try {
+    const res = await fetch('songs.json', { cache: 'no-cache' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    data = await res.json()
+  } catch (err) {
+    $('app').innerHTML = `
+      <div class="card">
+        <div class="err"><b>Could not load songs.json</b><br>${esc(err.message)}</div>
+        <p class="note">
+          If you opened this file directly, browsers block <code>fetch</code> on
+          <code>file://</code>. Run <code>node serve.mjs</code> in this folder and
+          open <a href="http://localhost:3000" style="color:var(--gold)">localhost:3000</a>.
+        </p>
+      </div>`
+    return
+  }
+
+  CATALOG = (Array.isArray(data) ? data : data.songs || [])
+    .filter(s => s && s.trackId && s.previewUrl && s.artist && s.title)
+
+  for (const s of CATALOG) s._search = `${norm(s.artist)} ${norm(s.title)}`
+
+  if (!CATALOG.length) {
+    $('app').innerHTML = `<div class="card"><div class="err">The catalog is empty.</div></div>`
+    return
+  }
+
+  $('foot').innerHTML = `${CATALOG.length} verified hip-hop &amp; rap tracks &middot; previews via the iTunes Search API`
+
+  audio.volume = 0.75
+
+  // #t=<trackId> drops you on a specific song (challenge links).
+  const m = location.hash.match(/t=(\d+)/)
+  const target = m ? CATALOG.find(s => s.trackId === Number(m[1])) : null
+
+  if (target) {
+    guesses = []; finished = false; won = false
+    song = target
+    audio.src = song.previewUrl
+    render()
+    toast('Challenge song loaded')
+  } else {
+    await newRound()
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('modal').hidden) $('modal').hidden = true
+})
+
+boot()
+</script>
+</body>
+</html>

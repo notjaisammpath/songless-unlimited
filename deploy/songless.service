@@ -1,0 +1,30 @@
+[Unit]
+Description=Songless Unlimited
+Documentation=https://github.com/notjaisammpath/songless-unlimited
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Replace PI_USER with the Pi's login (e.g. pi)
+User=PI_USER
+WorkingDirectory=/home/PI_USER/songless-unlimited
+Environment=PORT=3000
+# Loopback only — cloudflared fronts it. Use 0.0.0.0 if you also want
+# to reach it directly over the tailnet.
+Environment=HOST=127.0.0.1
+ExecStart=/usr/bin/node serve.mjs
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# Light hardening — it only ever reads its own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/PI_USER/songless-unlimited
+
+[Install]
+WantedBy=multi-user.target

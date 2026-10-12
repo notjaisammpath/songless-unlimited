@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Songless Unlimited</title>
+<style>
+  :root {
+    --bg: #0c0b10;
+    --bg-2: #15131c;
+    --card: #1b1825;
+    --line: #2e2940;
+    --line-2: #413a58;
+    --text: #f3f0f7;
+    --dim: #a79fbd;
+    --dimmer: #6f6886;
+    --gold: #f0b429;
+    --gold-dim: #8a6514;
+    --green: #35c46b;
+    --red: #e4474f;
+    --amber: #e8a33d;
+    --spotify: #1db954;
+    --radius: 14px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #1d1830 0%, var(--bg) 55%) no-repeat, var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    padding-block: 24px 48px;
+    padding-left: 18px;
+    padding-right: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 540px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 22px; }
+
+  h1 {
+    font-size: clamp(1.5rem, 6vw, 2rem);
+    margin: 0 0 6px;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+  }
+  h1 .mark { color: var(--gold); }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 0.73rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--spotify);
+    background: rgba(29,185,84,0.1);
+    border: 1px solid rgba(29,185,84,0.3);
+    padding: 5px 11px; border-radius: 999px;
+  }
+
+  .toolbar { display: flex; justify-content: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+
+  button {
+    font-family: inherit; font-size: 0.9rem; font-weight: 600;
+    color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 16px; cursor: pointer;
+    transition: background .14s, border-color .14s, transform .06s;
+  }
+  button:hover:not(:disabled) { background: #221e2f; border-color: var(--line-2); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .42; cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .btn-sm { padding: 7px 12px; font-size: 0.8rem; }
+  .btn-primary { background: var(--gold); color: #241a02; border-color: var(--gold); font-weight: 800; }
+  .btn-primary:hover:not(:disabled) { background: #f7c33f; border-color: #f7c33f; }
+  .btn-wide { width: 100%; }
+
+  .card {
+    background: linear-gradient(180deg, var(--card), var(--bg-2));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    box-shadow: 0 18px 50px -24px rgba(0,0,0,.85);
+  }
+
+  .player { display: flex; align-items: center; gap: 14px; }
+
+  .play-btn {
+    flex: 0 0 auto; width: 60px; height: 60px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--gold); border: none; color: #241a02; padding: 0;
+  }
+  .play-btn:hover:not(:disabled) { background: #f7c33f; }
+  .play-btn svg { width: 25px; height: 25px; display: block; }
+
+  .timeline { flex: 1 1 auto; min-width: 0; }
+
+  .track { position: relative; height: 10px; border-radius: 999px; background: #272235; overflow: hidden; }
+  .track .unlocked {
+    position: absolute; inset-block: 0; left: 0;
+    background: linear-gradient(90deg, var(--gold-dim), rgba(240,180,41,.45));
+    transition: width .35s cubic-bezier(.2,.8,.2,1);
+  }
+  .track .played { position: absolute; inset-block: 0; left: 0; background: var(--gold); width: 0; }
+
+  .ticks { position: relative; height: 15px; margin-top: 5px; }
+  .ticks span {
+    position: absolute; top: 0; transform: translateX(-50%);
+    font-size: 0.62rem; color: var(--dimmer); font-family: var(--mono);
+  }
+  .ticks span.on { color: var(--gold); font-weight: 700; }
+
+  .meta-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 9px; font-size: 0.78rem; color: var(--dim); gap: 10px;
+  }
+  .vol { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .vol input { width: 76px; accent-color: var(--gold); }
+
+  .guesses { margin: 18px 0 0; display: grid; gap: 7px; }
+
+  .slot {
+    display: flex; align-items: center; gap: 10px;
+    min-height: 42px; padding: 0 13px;
+    border: 1px solid var(--line); border-radius: 9px;
+    background: rgba(255,255,255,.015);
+    font-size: 0.86rem; color: var(--dimmer);
+  }
+  .slot.filled { color: var(--text); background: rgba(255,255,255,.04); }
+  .slot .ic { flex: 0 0 auto; font-size: 0.95rem; line-height: 1; }
+  .slot .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot.wrong { border-color: rgba(228,71,79,.4); }
+  .slot.wrong .ic { color: var(--red); }
+  .slot.skip { border-color: rgba(232,163,61,.38); }
+  .slot.skip .ic { color: var(--amber); }
+  .slot.correct { border-color: rgba(53,196,107,.55); background: rgba(53,196,107,.1); }
+  .slot.correct .ic { color: var(--green); }
+  .slot.active { border-color: var(--line-2); border-style: dashed; }
+
+  .guess-area { margin-top: 16px; position: relative; }
+
+  input[type=text] {
+    width: 100%; font-family: inherit; font-size: 0.95rem;
+    color: var(--text); background: #100e17;
+    border: 1px solid var(--line-2); border-radius: 10px;
+    padding: 13px 14px;
+  }
+  input[type=text]::placeholder { color: var(--dimmer); }
+  input[type=text]:focus { outline: none; border-color: var(--gold); }
+
+  .suggest {
+    position: absolute; left: 0; right: 0; bottom: calc(100% + 6px);
+    background: #141120; border: 1px solid var(--line-2);
+    border-radius: 10px; overflow: hidden; z-index: 30;
+    max-height: 258px; overflow-y: auto;
+    box-shadow: 0 -12px 34px -12px rgba(0,0,0,.9);
+  }
+  .suggest:empty { display: none; }
+  .suggest div {
+    padding: 10px 13px; cursor: pointer; font-size: 0.87rem;
+    border-bottom: 1px solid rgba(255,255,255,.045);
+  }
+  .suggest div:last-child { border-bottom: none; }
+  .suggest div.sel, .suggest div:hover { background: rgba(240,180,41,.14); }
+  .suggest .ar { color: var(--dim); }
+
+  .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .actions button { flex: 1 1 0; }
+
+  .reveal { text-align: center; }
+  .reveal .art {
+    width: 168px; height: 168px; border-radius: 12px; margin: 0 auto 16px;
+    background: #272235; object-fit: cover; display: block;
+    box-shadow: 0 14px 34px -14px rgba(0,0,0,.9);
+  }
+  .verdict { font-size: 0.74rem; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 9px; }
+  .verdict.win { color: var(--green); }
+  .verdict.lose { color: var(--red); }
+  .reveal .ttl { font-size: 1.22rem; font-weight: 800; letter-spacing: -0.01em; }
+  .reveal .art-name { color: var(--gold); margin-top: 3px; font-weight: 600; }
+  .reveal .alb { color: var(--dim); font-size: 0.82rem; margin-top: 7px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-bottom: 18px; }
+  .stat { text-align: center; }
+  .stat b { display: block; font-size: 1.32rem; font-weight: 800; }
+  .stat span { font-size: 0.66rem; color: var(--dim); text-transform: uppercase; letter-spacing: .07em; }
+
+  .dist { display: grid; gap: 5px; }
+  .dist .row { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; }
+  .dist .n { width: 12px; color: var(--dim); font-family: var(--mono); }
+  .dist .bar {
+    background: var(--gold-dim); height: 19px; border-radius: 4px;
+    min-width: 22px; display: flex; align-items: center; justify-content: flex-end;
+    padding-right: 6px; font-size: 0.7rem; font-weight: 700; color: #f6e4bb;
+  }
+  .dist .row.best .bar { background: var(--gold); color: #241a02; }
+
+  .modal {
+    position: fixed; inset: 0; background: rgba(6,5,10,.8);
+    display: grid; place-items: center; padding: 18px; z-index: 100;
+    backdrop-filter: blur(3px);
+  }
+  .modal[hidden] { display: none; }
+  .modal .inner {
+    background: var(--card); border: 1px solid var(--line-2);
+    border-radius: var(--radius); padding: 22px; width: 100%; max-width: 400px;
+    max-height: 86vh; overflow-y: auto;
+  }
+  .modal h2 { margin: 0 0 16px; font-size: 1.05rem; }
+
+  .note { font-size: 0.78rem; color: var(--dim); text-align: center; margin-top: 14px; line-height: 1.55; }
+  .err {
+    background: rgba(228,71,79,.1); border: 1px solid rgba(228,71,79,.35);
+    color: #ffb8bc; border-radius: 10px; padding: 13px; font-size: 0.85rem;
+    margin-bottom: 14px; line-height: 1.55;
+  }
+  code {
+    font-family: var(--mono); font-size: 0.85em;
+    background: rgba(255,255,255,.06); padding: 2px 5px; border-radius: 4px;
+    word-break: break-all;
+  }
+  a { color: var(--gold); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%);
+    background: var(--gold); color: #241a02; font-weight: 700; font-size: 0.85rem;
+    padding: 10px 18px; border-radius: 999px; z-index: 200; max-width: 90vw;
+    text-align: center; box-shadow: 0 10px 30px -10px rgba(0,0,0,.8);
+  }
+  .toast[hidden] { display: none; }
+
+  .loading { text-align: center; color: var(--dim); padding: 36px 0; }
+
+  @media (max-width: 420px) {
+    .play-btn { width: 52px; height: 52px; }
+    .reveal .art { width: 136px; height: 136px; }
+    .stat b { font-size: 1.1rem; }
+    .meta-row { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Songless <span class="mark">Unlimited</span></h1>
+    <div class="badge">● Your Spotify</div>
+    <div class="toolbar">
+      <button class="btn-sm" id="btn-stats">Stats</button>
+      <button class="btn-sm" id="btn-how">How to play</button>
+      <button class="btn-sm" id="btn-settings">Settings</button>
+    </div>
+  </header>
+
+  <div id="app"><div class="loading">Starting…</div></div>
+
+  <p class="note" id="foot"></p>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="inner">
+    <div id="modal-body"></div>
+    <button class="btn-wide" id="modal-close" style="margin-top:16px">Close</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

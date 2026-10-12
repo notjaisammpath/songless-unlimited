@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Songless Unlimited</title>
+<meta name="description" content="Name the rap track from a tenth of a second of audio. Unlimited rounds.">
+<style>
+  :root {
+    --bg: #0c0b10;
+    --bg-2: #15131c;
+    --card: #1b1825;
+    --line: #2e2940;
+    --line-2: #413a58;
+    --text: #f3f0f7;
+    --dim: #a79fbd;
+    --dimmer: #6f6886;
+    --gold: #f0b429;
+    --spotify: #1db954;
+    --radius: 14px;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: radial-gradient(1200px 600px at 50% -10%, #1d1830 0%, var(--bg) 55%) no-repeat, var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    padding-block: 40px 56px;
+    padding-left: 18px;
+    padding-right: 18px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 560px; margin: 0 auto; }
+
+  header { text-align: center; margin-bottom: 30px; }
+
+  h1 {
+    font-size: clamp(1.7rem, 7vw, 2.4rem);
+    margin: 0 0 10px;
+    letter-spacing: -0.03em;
+    font-weight: 800;
+  }
+  h1 .mark { color: var(--gold); }
+
+  .tag {
+    color: var(--dim); font-size: 0.95rem; line-height: 1.6;
+    max-width: 30rem; margin: 0 auto;
+  }
+  .tag b { color: var(--text); }
+
+  .modes { display: grid; gap: 14px; }
+
+  a.mode {
+    display: block; text-decoration: none; color: inherit;
+    background: linear-gradient(180deg, var(--card), var(--bg-2));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: border-color .15s, transform .1s, box-shadow .15s;
+  }
+  a.mode:hover {
+    border-color: var(--line-2);
+    transform: translateY(-2px);
+    box-shadow: 0 20px 44px -26px rgba(0,0,0,.9);
+  }
+  a.mode:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+  .mode-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .mode-head h2 { margin: 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; }
+
+  .pill {
+    font-size: 0.64rem; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .09em; padding: 4px 9px; border-radius: 999px;
+  }
+  .pill.open { color: var(--gold); background: rgba(240,180,41,.11); border: 1px solid rgba(240,180,41,.3); }
+  .pill.sp { color: var(--spotify); background: rgba(29,185,84,.1); border: 1px solid rgba(29,185,84,.3); }
+
+  .mode p { margin: 0 0 12px; color: var(--dim); font-size: 0.89rem; line-height: 1.6; }
+
+  ul.facts { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+  ul.facts li {
+    font-size: 0.8rem; color: var(--dimmer);
+    padding-left: 17px; position: relative; line-height: 1.5;
+  }
+  ul.facts li::before {
+    content: '·'; position: absolute; left: 6px; color: var(--gold); font-weight: 800;
+  }
+  ul.facts li b { color: var(--dim); font-weight: 600; }
+
+  .go {
+    margin-top: 14px; font-size: 0.86rem; font-weight: 700; color: var(--gold);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  a.mode:hover .go { gap: 10px; }
+  .go span { transition: transform .15s; }
+
+  .rules {
+    margin-top: 28px; border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 18px 20px; background: rgba(255,255,255,.015);
+  }
+  .rules h3 { margin: 0 0 10px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .11em; color: var(--dim); }
+  .rules p { margin: 0; font-size: 0.86rem; color: var(--dim); line-height: 1.65; }
+  .ladder {
+    font-family: var(--mono); color: var(--gold); font-weight: 700;
+    font-size: 0.84rem; letter-spacing: -0.01em;
+  }
+
+  footer { margin-top: 26px; text-align: center; font-size: 0.75rem; color: var(--dimmer); line-height: 1.7; }
+  footer a { color: var(--dim); }
+
+  @media (max-width: 420px) {
+    .mode-head h2 { font-size: 1rem; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Songless <span class="mark">Unlimited</span></h1>
+    <p class="tag">
+      Name the rap track from <b>a tenth of a second</b> of audio. Guess wrong and you
+      hear a little more. No daily limit — play as long as you like.
+    </p>
+  </header>
+
+  <div class="modes">
+    <a class="mode" href="/itunes">
+      <div class="mode-head">
+        <h2>Curated mode</h2>
+        <span class="pill open">No sign-in</span>
+      </div>
+      <p>267 hand-curated hip-hop and rap tracks, 1985 to 2025. Works for anyone, instantly.</p>
+      <ul class="facts">
+        <li><b>Nothing to set up</b> — just press play</li>
+        <li>143 artists across every era of the genre</li>
+        <li>Shareable challenge links put a friend on the same song</li>
+        <li>Clips come from 30-second previews, so they start <b>mid-song</b>, usually on the hook</li>
+      </ul>
+      <div class="go">Play<span>→</span></div>
+    </a>
+
+    <a class="mode" href="/spotify">
+      <div class="mode-head">
+        <h2>Spotify mode</h2>
+        <span class="pill sp">Premium · invite only</span>
+      </div>
+      <p>Built from your own listening history, playing the real tracks from the very beginning.</p>
+      <ul class="facts">
+        <li>Clips start at <b>true 0:00</b> — the actual intro, not a preview window</li>
+        <li>Catalog comes from <b>your</b> top tracks and saved songs</li>
+        <li>Needs <b>Spotify Premium</b> (Web Playback SDK requirement)</li>
+        <li>Your account must be added to the app's allowlist first — Spotify caps this at 25 people</li>
+      </ul>
+      <div class="go">Connect<span>→</span></div>
+    </a>
+  </div>
+
+  <div class="rules">
+    <h3>How a round works</h3>
+    <p>
+      Eight tries. You start with a tenth of a second and unlock more with every
+      wrong guess or skip:<br>
+      <span class="ladder">0.1s → 0.5s → 1s → 2s → 4s → 7s → 11s → 16s</span><br>
+      Start typing to search, then pick from the dropdown — a guess only counts
+      if it matches a real track.
+    </p>
+  </div>
+
+  <footer>
+    Audio from the iTunes Search API and the Spotify Web Playback SDK.<br>
+    Nothing is downloaded or redistributed. ·
+    <a href="https://github.com/notjaisammpath/songless-unlimited">Source</a>
+  </footer>
+</div>
+</body>
+</html>
