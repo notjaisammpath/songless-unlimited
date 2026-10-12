@@ -101,6 +101,34 @@
   a.mode:hover .go { gap: 10px; }
   .go span { transition: transform .15s; }
 
+  /* ---------- collapsed extra modes ---------- */
+  details.more { margin-top: 14px; }
+
+  details.more > summary {
+    list-style: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 13px 18px;
+    font-size: 0.86rem; font-weight: 600; color: var(--dim);
+    background: rgba(255,255,255,.02);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    transition: color .14s, border-color .14s;
+  }
+  /* Safari/Chrome still draw their own marker without this. */
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more > summary::marker { content: ''; }
+
+  details.more > summary:hover { color: var(--text); border-color: var(--line-2); }
+  details.more > summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  .chev { color: var(--dimmer); font-size: 0.8rem; transition: transform .18s; }
+  details.more[open] > summary { color: var(--text); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  details.more[open] .chev { transform: rotate(180deg); }
+  details.more[open] > .mode {
+    border-top: none;
+    border-top-left-radius: 0; border-top-right-radius: 0;
+  }
+  details.more[open] > .mode:hover { transform: none; }
+
   .rules {
     margin-top: 28px; border: 1px solid var(--line); border-radius: var(--radius);
     padding: 18px 20px; background: rgba(255,255,255,.015);
@@ -247,21 +275,6 @@
   </header>
 
   <div class="modes">
-    <a class="mode" href="/itunes">
-      <div class="mode-head">
-        <h2>Curated mode</h2>
-        <span class="pill open">No sign-in</span>
-      </div>
-      <p>267 hand-curated hip-hop and rap tracks, 1985 to 2025. Works for anyone, instantly.</p>
-      <ul class="facts">
-        <li><b>Nothing to set up</b> — just press play</li>
-        <li>143 artists across every era of the genre</li>
-        <li>Shareable challenge links put a friend on the same song</li>
-        <li>Clips come from 30-second previews, so they start <b>mid-song</b>, usually on the hook</li>
-      </ul>
-      <div class="go">Play<span>→</span></div>
-    </a>
-
     <a class="mode" href="/spotify">
       <div class="mode-head">
         <h2>Spotify mode</h2>
@@ -277,6 +290,28 @@
       <div class="go">Connect<span>→</span></div>
     </a>
   </div>
+
+  <!-- Native disclosure: collapsed by default, no JS, keyboard accessible. -->
+  <details class="more">
+    <summary>
+      <span>Other modes</span>
+      <span class="chev" aria-hidden="true">▾</span>
+    </summary>
+    <a class="mode" href="/itunes">
+      <div class="mode-head">
+        <h2>Curated mode</h2>
+        <span class="pill open">No sign-in</span>
+      </div>
+      <p>267 hand-curated hip-hop and rap tracks, 1985 to 2025. Works for anyone, instantly.</p>
+      <ul class="facts">
+        <li><b>Nothing to set up</b> — just press play</li>
+        <li>143 artists across every era of the genre</li>
+        <li>Shareable challenge links put a friend on the same song</li>
+        <li>Clips come from 30-second previews, so they start <b>mid-song</b>, usually on the hook</li>
+      </ul>
+      <div class="go">Play<span>→</span></div>
+    </a>
+  </details>
 
   <div class="rules">
     <h3>How a round works</h3>
