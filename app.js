@@ -487,6 +487,11 @@ async function hardStop() {
 function setIcon(playing) {
   const el = $('play-ic')
   if (el) el.innerHTML = playing ? ICON_STOP : ICON_PLAY
+  // Drive the pulse and the shimmer off the same state as the icon.
+  const btn = $('btn-play')
+  if (btn) btn.classList.toggle('playing', playing)
+  const bar = document.querySelector('.track .unlocked')
+  if (bar) bar.classList.toggle('live', playing)
 }
 
 /**
@@ -988,7 +993,8 @@ function render() {
           const g = guesses[i]
           if (g) {
             const ic = g.kind === 'correct' ? '✔' : g.kind === 'skip' ? '⏭' : '✕'
-            return `<div class="slot filled ${g.kind}"><span class="ic">${ic}</span><span class="txt">${esc(g.label)}</span></div>`
+            const just = i === guesses.length - 1 ? ' just' : ''
+            return `<div class="slot filled ${g.kind}${just}"><span class="ic">${ic}</span><span class="txt">${esc(g.label)}</span></div>`
           }
           const active = i === guesses.length
           return `<div class="slot ${active ? 'active' : ''}"><span class="ic">${active ? '▸' : ''}</span><span class="txt">${active ? 'Your guess…' : ''}</span></div>`
@@ -1024,7 +1030,8 @@ function render() {
 function renderReveal() {
   const s = loadStats()
   $('app').innerHTML = `
-    <div class="card reveal">
+    <div class="card reveal ${won ? 'win' : 'lose'}">
+      ${won ? `<div class="confetti" aria-hidden="true">${Array.from({ length: 14 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div>` : ''}
       ${song.artworkUrl ? `<img class="art" alt="" src="${esc(song.artworkUrl)}">` : ''}
       <div class="verdict ${won ? 'win' : 'lose'}">
         ${won ? `Got it in ${guesses.length} ${guesses.length === 1 ? 'try' : 'tries'}` : 'Out of tries'}

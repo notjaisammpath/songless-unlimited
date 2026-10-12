@@ -358,6 +358,115 @@
   /* Keep text selection off controls so a fast double tap cannot start a
      selection drag instead of firing the button. */
   button, .slot, .ticks, .mode-head, .go { -webkit-user-select: none; user-select: none; }
+
+  /* ======================================================
+     Motion
+     ====================================================== */
+
+  @keyframes shake {
+    10%, 90% { transform: translateX(-2px) }
+    30%, 70% { transform: translateX(3px) }
+    50%      { transform: translateX(-4px) }
+  }
+  @keyframes pop {
+    0%   { transform: scale(.94); opacity: .45 }
+    60%  { transform: scale(1.03) }
+    100% { transform: scale(1); opacity: 1 }
+  }
+  @keyframes slotIn {
+    from { opacity: 0; transform: translateY(-4px) }
+    to   { opacity: 1; transform: none }
+  }
+  @keyframes ringPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(240,180,41,.5) }
+    70%  { box-shadow: 0 0 0 15px rgba(240,180,41,0) }
+    100% { box-shadow: 0 0 0 0 rgba(240,180,41,0) }
+  }
+  @keyframes shimmer {
+    from { background-position: -120% 0 }
+    to   { background-position: 220% 0 }
+  }
+  @keyframes artIn {
+    from { opacity: 0; transform: scale(.9) translateY(8px) }
+    to   { opacity: 1; transform: none }
+  }
+  @keyframes riseIn {
+    from { opacity: 0; transform: translateY(7px) }
+    to   { opacity: 1; transform: none }
+  }
+  @keyframes toastIn {
+    from { opacity: 0; transform: translate(-50%, 10px) }
+    to   { opacity: 1; transform: translate(-50%, 0) }
+  }
+  @keyframes dlgIn {
+    from { opacity: 0; transform: scale(.96) translateY(6px) }
+    to   { opacity: 1; transform: none }
+  }
+  @keyframes winGlow {
+    0%, 100% { box-shadow: 0 14px 34px -14px rgba(0,0,0,.9) }
+    50%      { box-shadow: 0 14px 34px -14px rgba(0,0,0,.9), 0 0 0 5px rgba(53,196,107,.4) }
+  }
+  @keyframes fall {
+    0%   { opacity: 0; transform: translateY(-14px) rotate(0) }
+    12%  { opacity: 1 }
+    100% { opacity: 0; transform: translateY(210px) rotate(560deg) }
+  }
+
+  /* Guesses: the newest one reacts, the rest just settle in. */
+  .slot.filled { animation: slotIn .22s ease-out both; }
+  .slot.just.wrong   { animation: shake .36s ease-in-out both; }
+  .slot.just.correct { animation: pop .42s cubic-bezier(.2,1.3,.4,1) both; }
+
+  /* The play button breathes while audio is actually running. */
+  .play-btn.playing { animation: ringPulse 1.5s ease-out infinite; }
+
+  /* A light sweep across the unlocked portion while playing. */
+  .track .unlocked.live {
+    background-image: linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent);
+    background-size: 55% 100%;
+    background-repeat: no-repeat;
+    animation: shimmer 1.1s linear infinite;
+  }
+
+  /* Reveal: artwork first, then the details in sequence. */
+  .reveal { position: relative; }
+  .reveal .art       { animation: artIn .4s cubic-bezier(.2,1,.3,1) both; }
+  .reveal.win .art   { animation: artIn .4s cubic-bezier(.2,1,.3,1) both, winGlow 1.6s ease-in-out .4s 2; }
+  .reveal .verdict   { animation: riseIn .3s ease-out .06s both; }
+  .reveal .ttl       { animation: riseIn .3s ease-out .13s both; }
+  .reveal .art-name  { animation: riseIn .3s ease-out .19s both; }
+  .reveal .alb       { animation: riseIn .3s ease-out .25s both; }
+  .reveal .actions   { animation: riseIn .3s ease-out .32s both; }
+
+  .toast:not([hidden]) { animation: toastIn .2s ease-out both; }
+  .modal:not([hidden]) .inner { animation: dlgIn .22s cubic-bezier(.2,1,.3,1) both; }
+  dialog[open] { animation: dlgIn .22s cubic-bezier(.2,1,.3,1) both; }
+
+  /* Win confetti — rendered in the template, so no timers to clean up. */
+  .confetti {
+    position: absolute; inset: 0; overflow: hidden;
+    pointer-events: none; border-radius: var(--radius);
+  }
+  .confetti i {
+    position: absolute; top: 0;
+    width: 7px; height: 11px; border-radius: 2px;
+    left: calc(4% + var(--i) * 6.6%);
+    background: var(--gold);
+    animation: fall 1.5s ease-in calc(var(--i) * 55ms) both;
+  }
+  .confetti i:nth-child(3n)   { background: var(--green); }
+  .confetti i:nth-child(3n+1) { background: #6ea8ff; }
+  .confetti i:nth-child(4n)   { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* Landing page choices arrive in order. */
+  a.pick { animation: riseIn .34s ease-out both; }
+  a.pick:nth-of-type(1) { animation-delay: .04s; }
+  a.pick:nth-of-type(2) { animation-delay: .11s; }
+
+  /* Honour the system setting — all of this is decoration. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
