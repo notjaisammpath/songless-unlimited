@@ -63,6 +63,7 @@ let bootPhase = 'starting up'
 let playbackErrors = 0
 let userVolume = 0.75
 let prepared = false
+let priming = null   // in-flight prepareTrack(), so plays can wait it out
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -431,6 +432,9 @@ async function initPlayer() {
   })
   player.addListener('playback_error', ({ message }) => {
     console.error('playback_error', message)
+    // "The operation is not allowed" is a transport-command race, not a
+    // licence failure — escalating it to the DRM screen would be wrong.
+    if (/not allowed/i.test(message || '')) return
     playbackErrors++
     // The SDK retries the licence request in a loop; one toast per attempt is
     // noise. After a couple of failures, say what is actually wrong.
@@ -459,6 +463,7 @@ function stopPolling() {
 async function hardStop() {
   gen++
   stopPolling()
+  if (priming) { try { await priming } catch {} }
   isPlaying = false
   try { if (player) await player.pause() } catch {}
   setIcon(false)
@@ -480,36 +485,50 @@ async function prepareTrack() {
   prepared = false
   if (!playerReady || !deviceId || !song) return
 
-  const my = gen
-  try {
-    await player.setVolume(0)
-    await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
-      method: 'PUT',
-      body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
-    })
+  const target = song.uri
 
-    // Wait for the stream to actually begin before pausing it.
-    for (let i = 0; i < 80; i++) {
-      if (my !== gen) return
-      const st = await player.getCurrentState().catch(() => null)
-      if (st && !st.paused && st.position > 0) break
-      await sleep(50)
+  priming = (async () => {
+    try {
+      await player.setVolume(0)
+      await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ uris: [target], position_ms: 0 }),
+      })
+
+      // Wait for the stream to actually begin before pausing it.
+      for (let i = 0; i < 80; i++) {
+        const st = await player.getCurrentState().catch(() => null)
+        if (st && !st.paused && st.position > 0) break
+        await sleep(50)
+      }
+    } catch (err) {
+      console.warn('pre-buffer failed; will cold start instead', err.message)
+    } finally {
+      // CRITICAL: stop before restoring volume, on every path. Bailing out
+      // early here previously left a muted stream running and then un-muted
+      // it, so the song played on with nothing tracking it.
+      try { await player.pause() } catch {}
+      try { await player.seek(0) } catch {}
+      try { await player.setVolume(userVolume) } catch {}
+      // Only claim primed status if the round still wants this track.
+      prepared = !!song && song.uri === target
+      priming = null
     }
+  })()
 
-    if (my !== gen) return
-    await player.pause()
-    await player.seek(0)
-    prepared = true
-  } catch (err) {
-    console.warn('pre-buffer failed; falling back to cold start', err.message)
-  } finally {
-    try { await player.setVolume(userVolume) } catch {}
-  }
+  return priming
 }
 
 /** Play the real track from 0:00 and cut it off at `seconds`. */
 async function playClip(seconds) {
   if (!playerReady || !deviceId) { toast('Player not ready yet'); return }
+
+  // Never issue transport commands while priming is mid-flight — overlapping
+  // play/pause/seek is what produces "The operation is not allowed."
+  if (priming) {
+    toast('Buffering…', 1200)
+    try { await priming } catch {}
+  }
 
   const my = ++gen
   stopPolling()
@@ -517,8 +536,17 @@ async function playClip(seconds) {
   try {
     if (prepared) {
       // Already buffered and parked at 0:00 — resume is near-instant.
-      await player.seek(0)
-      await player.resume()
+      try {
+        await player.seek(0)
+        await player.resume()
+      } catch (e) {
+        console.warn('resume rejected, cold starting instead:', e.message)
+        prepared = false
+        await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
+          method: 'PUT',
+          body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
+        })
+      }
     } else {
       await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
         method: 'PUT',

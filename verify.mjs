@@ -246,6 +246,42 @@ hogs.length ? warn(`artists over 6 tracks: ${hogs.map(([a, n]) => `${a}(${n})`).
 
 songs.length >= 150 ? ok(`${songs.length} tracks is plenty for repeat play`) : warn(`${songs.length} tracks is on the small side`)
 
+/* ---------- 8. Spotify mode ---------- */
+
+head('8. Spotify mode (app.js)')
+
+let appjs = ''
+try { appjs = readFileSync(new URL('./app.js', import.meta.url), 'utf8') } catch {}
+
+if (!appjs) {
+  warn('app.js not found — Spotify-mode checks skipped')
+} else {
+  // The priming playback is muted; if it can exit without pausing, the track
+  // plays on at full volume with nothing tracking it.
+  const prep = appjs.slice(appjs.indexOf('async function prepareTrack'), appjs.indexOf('/** Play the real track'))
+  const bodyAfterGuard = prep.slice(prep.indexOf('priming = ('))
+  const pausesInFinally = /\bfinally\b[\s\S]*player\.pause\(\)/.test(prep)
+  const hasEarlyBail = /my !== gen\) return/.test(bodyAfterGuard)
+  if (pausesInFinally && !hasEarlyBail) ok('pre-buffer always pauses before restoring volume (no runaway playback)')
+  else bad('pre-buffer can exit without pausing — muted priming would play on un-muted')
+
+  appjs.includes('if (priming) {')
+    ? ok('playback waits for in-flight priming instead of racing it')
+    : bad('no priming guard — overlapping transport commands cause "operation is not allowed"')
+
+  const guardsRace = /not allowed/.test(appjs) && appjs.includes("playbackErrors++")
+  if (guardsRace) ok("transport races are not mistaken for DRM failures")
+  else warn("a transport race may escalate to the DRM screen")
+
+  appjs.includes('judgeable')
+    ? ok('genre filter is fail-open (missing data never drops a track)')
+    : bad('genre filter can drop tracks whose genres are unknown')
+
+  appjs.includes("guesses.some(g => g.id && g.id === guessed.id)")
+    ? ok('repeated guesses rejected')
+    : bad('repeated guesses consume an attempt')
+}
+
 /* ---------- summary ---------- */
 
 console.log(`\n${'─'.repeat(52)}`)
