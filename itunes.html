@@ -493,8 +493,9 @@
   .eras { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 
   .era {
+    position: relative;
     display: flex; flex-direction: column; align-items: center; gap: 2px;
-    padding: 11px 6px; border-radius: 10px;
+    padding: 13px 6px 11px; border-radius: 10px;
     background: rgba(255,255,255,.02);
     border: 1px solid var(--line);
     cursor: pointer; touch-action: manipulation;
@@ -575,6 +576,20 @@
     color: var(--gold);
   }
   button.era.on span { color: rgba(240,180,41,.75); }
+
+  /* A corner tick, so selection does not rest on fill colour alone. Always in
+     the DOM — only its colours change, so toggling never moves the label. */
+  button.era .tick {
+    position: absolute; top: 5px; right: 5px;
+    width: 14px; height: 14px; border-radius: 4px;
+    border: 1.5px solid var(--line-2);
+    display: grid; place-items: center;
+    font-size: 0.56rem; font-weight: 900; line-height: 1;
+    color: transparent; background: transparent;
+    transition: background .14s, border-color .14s, color .14s;
+  }
+  button.era.on .tick { background: var(--gold); border-color: var(--gold); color: #241a02; }
+  button.era:not(.on) .tick { background: transparent; border-color: var(--line-2); color: transparent; }
 
   /* Unselected chips keep a plain resting state whatever :hover does. */
   button.era:not(.on),
@@ -788,6 +803,7 @@ function erasHtml() {
       ${ERAS.map(d => `
         <button class="era ${sel.includes(d) ? 'on' : ''}" data-d="${d}"
                 aria-pressed="${sel.includes(d)}">
+          <span class="tick" aria-hidden="true">✓</span>
           <b>${eraLabel(d)}</b><span>${counts[d]}</span>
         </button>`).join('')}
     </div>
