@@ -259,22 +259,46 @@ async function buildCatalog(includeAllGenres = false) {
 
   if (!tracks.size) throw new Error('Spotify returned no tracks for your account.')
 
-  // Artist genres drive the hip-hop filter. (audio-features is deprecated for
-  // new apps, so artist genres are the available signal.)
+  // Artist genres are the only genre signal left to new apps (audio-features is
+  // deprecated). But /artists itself 403s for apps stuck in Development Mode,
+  // so treat it as best-effort enrichment and never let it abort the build.
   const artistIds = [...new Set([...tracks.values()].flatMap(t => (t.artists || []).map(a => a.id)).filter(Boolean))]
   const genreOf = new Map()
+  let genresBlocked = false
 
-  for (let i = 0; i < artistIds.length; i += 50) {
+  // Chunks of 20 rather than 50: shorter URLs, and a single rejected chunk
+  // costs less progress.
+  for (let i = 0; i < artistIds.length; i += 20) {
+    if (genresBlocked) break
     progress(`Checking genres… (${i}/${artistIds.length} artists)`)
-    const r = await api(`/artists?ids=${artistIds.slice(i, i + 50).join(',')}`)
-    for (const a of r?.artists || []) if (a?.id) genreOf.set(a.id, a.genres || [])
+    const chunk = artistIds.slice(i, i + 20)
+    try {
+      const r = await api(`/artists?ids=${chunk.join(',')}`)
+      for (const a of r?.artists || []) if (a?.id) genreOf.set(a.id, a.genres || [])
+    } catch (err) {
+      if (err.status === 403 || err.status === 404) {
+        // Probe the single-artist endpoint — sometimes only the batch form is barred.
+        try {
+          const one = await api(`/artists/${chunk[0]}`)
+          if (one?.id) { genreOf.set(one.id, one.genres || []); continue }
+        } catch {}
+        genresBlocked = true
+        console.warn('Artist genre lookup unavailable for this app; skipping the genre filter.', err.message)
+      } else {
+        throw err
+      }
+    }
   }
+
+  // With no genre data there is nothing to filter on, so keep everything
+  // rather than returning an empty catalog.
+  const effectiveFilter = genresBlocked ? false : !includeAllGenres
 
   const out = []
   for (const t of tracks.values()) {
     const genres = (t.artists || []).flatMap(a => genreOf.get(a.id) || [])
     const isRap = genres.some(g => RAP_RE.test(g))
-    if (!includeAllGenres && !isRap) continue
+    if (effectiveFilter && !isRap) continue
     if (t.is_local) continue
     if (!t.uri) continue
 
@@ -300,7 +324,13 @@ async function buildCatalog(includeAllGenres = false) {
   }
 
   const catalog = [...bySong.values()]
-  lsSet(K_CATALOG, { builtAt: Date.now(), includeAllGenres, songs: catalog, scanned: tracks.size })
+  lsSet(K_CATALOG, {
+    builtAt: Date.now(),
+    includeAllGenres,
+    genresBlocked,
+    songs: catalog,
+    scanned: tracks.size,
+  })
   return catalog
 }
 
@@ -863,7 +893,11 @@ function settingsHtml() {
     <h2>Settings</h2>
     <p class="note" style="text-align:left">
       ${CATALOG.length} songs in your catalog${c?.scanned ? `, filtered from ${c.scanned} scanned` : ''}.
-      ${c?.includeAllGenres ? 'Currently using <b>all genres</b>.' : 'Currently <b>hip-hop/rap only</b>.'}
+      ${c?.genresBlocked
+        ? 'Spotify returned <b>403 Forbidden</b> for the artist-genre lookup, which happens when an app is '
+          + 'still in Development Mode. Without genre data there is nothing to filter on, so <b>everything</b> '
+          + 'is included. Requesting Extended Quota Mode in the Spotify dashboard would restore it.'
+        : (c?.includeAllGenres ? 'Currently using <b>all genres</b>.' : 'Currently <b>hip-hop/rap only</b>.')}
     </p>
     <button class="btn-wide" id="s-rebuild">Rebuild catalog from Spotify</button>
     <button class="btn-wide" id="s-toggle" style="margin-top:8px">
@@ -909,7 +943,12 @@ const HOW_HTML = `
 
 function afterCatalog() {
   for (const s of CATALOG) s._search = `${norm(s.artist)} ${norm(s.title)}`
+  const meta = lsGet(K_CATALOG) || {}
   $('foot').innerHTML = `${CATALOG.length} songs from your Spotify · clips start at 0:00`
+    + (meta.genresBlocked
+      ? '<br><span style="color:var(--amber)">Spotify blocked the genre lookup for this app, '
+        + 'so every saved song is included — not just hip-hop.</span>'
+      : '')
   newRound()
 }
 
