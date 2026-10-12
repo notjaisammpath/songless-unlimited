@@ -50,11 +50,26 @@ const server = createServer(async (req, res) => {
       return
     }
 
-    const body = await readFile(full)
+    let body = await readFile(full)
+    const ext = extname(full).toLowerCase()
+
+    // Cloudflare ignores `no-cache` on .js and imposes its own max-age=14400,
+    // so a redeploy would otherwise serve stale code to browsers for 4 hours.
+    // Stamp the script URL with app.js's mtime: new deploy, new URL, no stale hit.
+    if (ext === '.html') {
+      let v = '0'
+      try { v = String(Math.floor((await stat(join(ROOT, 'app.js'))).mtimeMs)) } catch {}
+      body = Buffer.from(
+        body.toString('utf8').replace(/src="app\.js(?:\?[^"]*)?"/g, `src="app.js?v=${v}"`),
+        'utf8',
+      )
+    }
+
     res.writeHead(200, {
-      'Content-Type': TYPES[extname(full).toLowerCase()] ?? 'application/octet-stream',
+      'Content-Type': TYPES[ext] ?? 'application/octet-stream',
       'Content-Length': body.length,
-      'Cache-Control': 'no-cache',
+      // HTML must never be held, or the versioned script URL never updates.
+      'Cache-Control': ext === '.html' ? 'no-store, must-revalidate' : 'no-cache',
     }).end(body)
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'text/plain' }).end(`Server error: ${err.message}`)
