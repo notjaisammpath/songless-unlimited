@@ -154,6 +154,14 @@ for (const [name, src] of [["itunes.html", html]]) {
 
   if (src.includes("viewport-fit=cover")) ok("viewport-fit=cover set")
   else warn("viewport-fit=cover missing, so safe-area insets resolve to 0")
+
+  // A flex item without min-width:0 will not shrink, so ellipsis never fires.
+  const truncates = css.includes(".slot .txt") && css.includes("min-width: 0")
+  if (truncates) ok("long guess labels truncate instead of overflowing the card")
+  else bad("slot text lacks min-width:0 — long labels will push past the card edge")
+
+  if (css.includes("overflow-x: hidden")) ok("no sideways scroll possible")
+  else warn("nothing prevents horizontal overflow")
 }
 
 /* ---------- 2d. era picker ---------- */
