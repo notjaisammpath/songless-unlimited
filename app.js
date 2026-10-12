@@ -36,7 +36,16 @@ const SCOPES = [
   'user-library-read',
   'user-modify-playback-state',
   'user-read-playback-state',
+  // Playlists are usually the largest source of tracks; recently-played adds
+  // whatever is in rotation right now. Both need their own scope.
+  'playlist-read-private',
+  'playlist-read-collaborative',
+  'user-read-recently-played',
 ].join(' ')
+
+// Bump when SCOPES changes: a token minted under the old set silently 403s on
+// the new endpoints, so the stored token must be discarded and re-consented.
+const SCOPE_VERSION = 2
 
 // Artist genres that count as hip-hop for catalog filtering.
 const RAP_RE = /hip hop|hip-hop|\brap\b|trap|drill|grime|crunk|hyphy|bounce|phonk/i
@@ -71,6 +80,9 @@ let priming = null   // in-flight prepareTrack(), so plays can wait it out
 // Priming plays the track muted to buffer it. Doing that before the user has
 // interacted means page load alone starts audio, so it waits for a gesture.
 let gestured = false
+let analysisBlocked = false
+let startMs = 0            // where the current track's audible part begins
+const onsetCache = {}      // trackId -> ms, per session
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
 
@@ -171,7 +183,7 @@ async function exchangeCode(code) {
   const j = await res.json()
   if (!res.ok) throw new Error(j.error_description || j.error || `token exchange failed (${res.status})`)
 
-  lsSet(K_TOKEN, { ...j, expires_at: Date.now() + (j.expires_in - 60) * 1000 })
+  lsSet(K_TOKEN, { ...j, scope_version: SCOPE_VERSION, expires_at: Date.now() + (j.expires_in - 60) * 1000 })
   localStorage.removeItem(K_VERIFIER)
 }
 
@@ -261,20 +273,73 @@ async function buildCatalog(includeAllGenres = false) {
 
   const tracks = new Map()
 
+  const MAX_TRACKS = 2000
+  const add = t => {
+    if (!t || t.type === 'episode' || !t.id || t.is_local) return
+    if (tracks.size >= MAX_TRACKS) return
+    tracks.set(t.id, t)
+  }
+
   // Top tracks across all three windows.
   for (const range of ['short_term', 'medium_term', 'long_term']) {
     progress(`Reading your top tracks (${range.replace('_term', '')})…`)
     const r = await api(`/me/top/tracks?limit=50&time_range=${range}`)
-    for (const t of r?.items || []) if (t?.id) tracks.set(t.id, t)
+    for (const t of r?.items || []) add(t)
   }
 
-  // Saved library.
-  for (let page = 0; page < 6; page++) {
+  // Saved library — paginate until exhausted, not just the first few pages.
+  for (let page = 0; page < 20; page++) {
     progress(`Reading your saved songs… (${tracks.size} found)`)
     const r = await api(`/me/tracks?limit=50&offset=${page * 50}`)
     const items = r?.items || []
-    for (const it of items) if (it?.track?.id) tracks.set(it.track.id, it.track)
-    if (items.length < 50) break
+    for (const it of items) add(it?.track)
+    if (items.length < 50 || tracks.size >= MAX_TRACKS) break
+  }
+
+  // Recently played.
+  try {
+    progress(`Reading recently played… (${tracks.size} found)`)
+    const r = await api('/me/player/recently-played?limit=50')
+    for (const it of r?.items || []) add(it?.track)
+  } catch (err) {
+    console.warn('recently-played unavailable:', err.message)
+  }
+
+  // Playlists — usually the biggest source by far.
+  try {
+    const playlists = []
+    for (let page = 0; page < 10; page++) {
+      const r = await api(`/me/playlists?limit=50&offset=${page * 50}`)
+      const items = r?.items || []
+      playlists.push(...items.filter(Boolean))
+      if (items.length < 50) break
+    }
+
+    let done = 0
+    for (const pl of playlists) {
+      if (tracks.size >= MAX_TRACKS) break
+      done++
+      progress(`Reading playlists… (${done}/${playlists.length} · ${tracks.size} found)`)
+      for (let page = 0; page < 10; page++) {
+        let r
+        try {
+          r = await api(`/playlists/${pl.id}/tracks?limit=100&offset=${page * 100}`)
+        } catch (err) {
+          console.warn(`playlist "${pl.name}" unreadable:`, err.message)
+          break
+        }
+        const items = r?.items || []
+        for (const it of items) add(it?.track)
+        if (items.length < 100 || tracks.size >= MAX_TRACKS) break
+      }
+    }
+    console.log(`scanned ${playlists.length} playlists`)
+  } catch (err) {
+    console.warn('playlists unavailable:', err.message)
+  }
+
+  if (tracks.size >= MAX_TRACKS) {
+    console.warn(`hit the ${MAX_TRACKS}-track scan cap — some sources were not fully read`)
   }
 
   if (!tracks.size) throw new Error('Spotify returned no tracks for your account.')
@@ -304,10 +369,20 @@ async function buildCatalog(includeAllGenres = false) {
   }
 
   if (!batchWorks) {
-    // One request per artist. Slower, but it yields the real genre tags.
+    // One request per artist, so cap it — a 1000-artist library would
+    // otherwise take minutes. Uncovered artists stay unknown, and the
+    // fail-open filter keeps their tracks rather than dropping them.
+    const LOOKUP_CAP = 400
+    let looked = 0
+
     for (const [n, id] of artistIds.entries()) {
       if (genreOf.has(id)) continue
-      if (n % 5 === 0) progress(`Checking genres one by one… (${n}/${artistIds.length})`)
+      if (looked >= LOOKUP_CAP) {
+        console.warn(`genre lookup cap reached: ${artistIds.length - n} artists left unchecked (their tracks are kept)`)
+        break
+      }
+      if (looked % 10 === 0) progress(`Checking genres one by one… (${looked}/${Math.min(artistIds.length, LOOKUP_CAP)})`)
+      looked++
       try {
         const a = await api(`/artists/${id}`)
         if (a?.id) genreOf.set(a.id, a.genres || [])
@@ -324,6 +399,8 @@ async function buildCatalog(includeAllGenres = false) {
   // Only claim the filter is unusable when coverage is genuinely too thin to
   // judge by. Filtering on mostly-missing data is what produced an empty
   // catalog before.
+  // Capped lookups mean coverage can be low even when the data we DID get is
+  // good, so this only decides whether to advertise the filter as unusable.
   const coverage = artistIds.length ? genreOf.size / artistIds.length : 0
   genresBlocked = coverage < 0.5
   console.log(`genre coverage: ${genreOf.size}/${artistIds.length} artists (${Math.round(coverage * 100)}%)`)
@@ -501,6 +578,44 @@ function setIcon(playing) {
  * transition, and a swallowed rejection previously let muted priming playback
  * continue and then get un-muted. Returns true only when state says paused.
  */
+/**
+ * Where the audible music actually begins. Many tracks open with a fade-in or
+ * near-silence, so a 0.1s clip taken from literal 0:00 can contain nothing.
+ *
+ * /audio-analysis is on Spotify's deprecation list for new apps, so this is
+ * best-effort: a 403 disables it permanently for the session and clips fall
+ * back to starting at 0:00.
+ */
+async function onsetMsFor(track) {
+  if (!track || analysisBlocked) return 0
+  if (onsetCache[track.id] !== undefined) return onsetCache[track.id]
+
+  try {
+    const a = await api(`/audio-analysis/${track.id}`)
+
+    let ms = 0
+    const fadeIn = a?.track?.end_of_fade_in
+    if (typeof fadeIn === 'number' && fadeIn > 0) ms = Math.round(fadeIn * 1000)
+
+    // Otherwise take the first segment that is meaningfully above silence.
+    if (!ms && Array.isArray(a?.segments)) {
+      const seg = a.segments.find(x => (x.loudness_max ?? -60) > -35)
+      if (seg) ms = Math.round((seg.start || 0) * 1000)
+    }
+
+    // Never skip so far that we lose the intro entirely.
+    onsetCache[track.id] = Math.max(0, Math.min(ms, 4000))
+    if (onsetCache[track.id]) console.log(`onset for "${track.title}": ${onsetCache[track.id]}ms`)
+    return onsetCache[track.id]
+  } catch (err) {
+    if (err.status === 403 || err.status === 404) {
+      analysisBlocked = true
+      console.warn('audio-analysis unavailable for this app — clips will start at 0:00.')
+    }
+    return 0
+  }
+}
+
 async function forceStop(maxMs = 4000) {
   const deadline = Date.now() + maxMs
   while (Date.now() < deadline) {
@@ -525,7 +640,7 @@ async function prepareTrack() {
       await player.setVolume(0)
       await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
         method: 'PUT',
-        body: JSON.stringify({ uris: [target], position_ms: 0 }),
+        body: JSON.stringify({ uris: [target], position_ms: startMs }),
       })
 
       // Wait for the stream to actually begin before pausing it.
@@ -541,7 +656,7 @@ async function prepareTrack() {
       // pause() rejection used to leave a muted stream running and then
       // un-mute it, playing the whole song with nothing tracking it.
       const stopped = await forceStop()
-      try { await player.seek(0) } catch {}
+      try { await player.seek(startMs) } catch {}
 
       if (stopped) {
         try { await player.setVolume(userVolume) } catch {}
@@ -577,20 +692,20 @@ async function playClip(seconds) {
     if (prepared) {
       // Already buffered and parked at 0:00 — resume is near-instant.
       try {
-        await player.seek(0)
+        await player.seek(startMs)
         await player.resume()
       } catch (e) {
         console.warn('resume rejected, cold starting instead:', e.message)
         prepared = false
         await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
           method: 'PUT',
-          body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
+          body: JSON.stringify({ uris: [song.uri], position_ms: startMs }),
         })
       }
     } else {
       await api(`/me/player/play?device_id=${encodeURIComponent(deviceId)}`, {
         method: 'PUT',
-        body: JSON.stringify({ uris: [song.uri], position_ms: 0 }),
+        body: JSON.stringify({ uris: [song.uri], position_ms: startMs }),
       })
     }
   } catch (err) {
@@ -621,7 +736,7 @@ async function playClip(seconds) {
     isPlaying = false
     try { await player.pause() } catch {}
     // Park back at 0:00 so the next, longer clip is also primed.
-    try { await player.seek(0); prepared = true } catch { prepared = false }
+    try { await player.seek(startMs); prepared = true } catch { prepared = false }
     setIcon(false)
     const bar = document.querySelector('.played')
     if (bar) bar.style.width = '0%'
@@ -639,28 +754,31 @@ async function playClip(seconds) {
     try { st = await player.getCurrentState() } catch { return }
     if (!st) return
 
-    if (t0 === null && st.position > 0) {
+    // Everything is measured from startMs, not from 0:00.
+    const into = st.position - startMs
+
+    if (t0 === null && into > 0) {
       // Real audio position advanced — playback works.
       everPlayed = true
       playbackErrors = 0
-      t0 = performance.now() - st.position
-      const remaining = limit - st.position
+      t0 = performance.now() - into
+      const remaining = limit - into
       if (remaining <= 0) {
         // Start-up latency already overran this stage. Give it a short audible
         // floor rather than cutting instantly and playing nothing at all.
-        console.warn(`stage ${seconds}s: first position report was ${st.position}ms`)
+        console.warn(`stage ${seconds}s: first report was ${into}ms into the clip`)
         cutId = setTimeout(cut, 60)
       } else {
         cutId = setTimeout(cut, remaining)
       }
     }
 
-    const elapsed = t0 === null ? st.position : performance.now() - t0
+    const elapsed = t0 === null ? Math.max(0, into) : performance.now() - t0
     const bar = document.querySelector('.played')
     if (bar) bar.style.width = `${Math.min(100, scale(elapsed / 1000))}%`
 
     // Backstop: if the timer never fires, or playback died outright.
-    if (elapsed >= limit + 150 || (st.paused && st.position === 0 && t0 !== null)) cut()
+    if (elapsed >= limit + 150 || (st.paused && into <= 0 && t0 !== null)) cut()
   }, 10)
 }
 
@@ -1072,8 +1190,14 @@ function newRound() {
   selIdx = -1
   lastSuggestions = []
   song = nextFromBag()
+  startMs = 0
   render()
-  prepareTrack()
+
+  // Resolve the onset first so priming buffers the right position.
+  onsetMsFor(song).then(ms => {
+    startMs = ms
+    prepareTrack()
+  })
 }
 
 function share() {
@@ -1216,7 +1340,26 @@ async function boot() {
   }
 
   if (!lsGet(K_CLIENT)) { renderSetup(); return }
-  if (!lsGet(K_TOKEN)) { renderConnect(); return }
+
+  const tok = lsGet(K_TOKEN)
+  if (tok && tok.scope_version !== SCOPE_VERSION) {
+    // The stored token predates the current scope list, so it would 403 on the
+    // newer endpoints. Discard it and ask for consent again.
+    console.log('scope list changed — re-authorisation required')
+    for (const k of [K_TOKEN, K_CATALOG, K_BAG]) localStorage.removeItem(k)
+    $('app').innerHTML = `
+      <div class="card" style="text-align:center">
+        <p class="note" style="margin:0 0 16px">
+          Songless now also reads your <b>playlists</b> and <b>recently played</b>
+          to build a bigger catalog, which needs fresh permission from Spotify.
+        </p>
+        <button class="btn-wide btn-primary" id="btn-reconsent">Reconnect Spotify</button>
+      </div>`
+    $('btn-reconsent').onclick = login
+    return
+  }
+
+  if (!tok) { renderConnect(); return }
 
   renderBuilding()
 
