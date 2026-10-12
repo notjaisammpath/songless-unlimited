@@ -558,6 +558,37 @@
 
   /* Nothing should ever cause a sideways scroll. */
   html, body { max-width: 100%; overflow-x: hidden; }
+
+  /* ------------------------------------------------------
+     Era chip state (must come last)
+     ------------------------------------------------------ */
+
+  /* The generic button hover rules are (0,2,1) and so outrank .era.on at
+     (0,2,0). On touch, :hover sticks to the last chip tapped, so the reset
+     stripped its fill and border while leaving the gold text — a third,
+     unintended visual state. These win on specificity and source order. */
+  button.era.on,
+  button.era.on:hover,
+  button.era.on:active {
+    background: rgba(240,180,41,.13);
+    border-color: rgba(240,180,41,.55);
+    color: var(--gold);
+  }
+  button.era.on span { color: rgba(240,180,41,.75); }
+
+  /* Unselected chips keep a plain resting state whatever :hover does. */
+  button.era:not(.on),
+  button.era:not(.on):hover {
+    background: rgba(255,255,255,.02);
+    border-color: var(--line);
+    color: var(--text);
+  }
+  button.era:not(.on) span { color: var(--dimmer); }
+
+  /* Only real pointers get a hover affordance. */
+  @media (hover: hover) {
+    button.era:not(.on):hover { background: rgba(255,255,255,.05); border-color: var(--line-2); }
+  }
 </style>
 </head>
 <body>
