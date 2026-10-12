@@ -340,8 +340,10 @@ if (!appjs) {
   else warn("a transport race may escalate to the DRM screen")
 
   // Look for a real call site, not the word in a comment or log message.
-  const artistCallSite = 'api(`/artists'
-  const noGenreFilter = !appjs.includes('RAP_RE') && !appjs.includes(artistCallSite)
+  // The batch artist endpoint was only ever used for genre tags. Single-artist
+  // calls (top-tracks) are a legitimate catalog source, so match the batch form.
+  const genreBatchCall = "api(`/artists?ids="
+  const noGenreFilter = !appjs.includes('RAP_RE') && !appjs.includes(genreBatchCall)
   if (noGenreFilter) ok("no genre filtering (every scanned track is kept)")
   else bad("genre filtering code is still present")
 
