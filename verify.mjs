@@ -131,6 +131,31 @@ scriptForRules.includes("toast('Pick a song from the list')")
   ? ok('free-text that matches nothing is rejected')
   : bad('unmatched free text is not rejected — a typo could count as a guess')
 
+/* ---------- 2c. mobile ---------- */
+
+head("2c. Mobile")
+
+for (const [name, src] of [["itunes.html", html]]) {
+  const css = src.slice(src.indexOf("<style>"), src.lastIndexOf("</style>"))
+  const o = (css.match(/{/g) || []).length, c = (css.match(/}/g) || []).length
+  if (o === c) ok(`${name} CSS braces balanced (${o})`)
+  else bad(`${name} CSS braces unbalanced: ${o} open vs ${c} close`)
+
+  // Anything under 16px makes iOS Safari zoom the page on focus.
+  if (css.includes("input[type=text] { font-size: 16px")) ok("text input is 16px on mobile (no iOS zoom-on-focus)")
+  else bad("mobile text input under 16px — iOS will zoom the page on focus")
+
+  // :hover sticks after a tap on touch devices.
+  if (css.includes("hover: none")) ok("hover states neutralised on touch devices")
+  else bad("no (hover: none) block — tapped buttons stay stuck in hover state")
+
+  if (css.includes("safe-area-inset")) ok("safe-area insets respected")
+  else warn("no safe-area insets — content can sit under a notch or home bar")
+
+  if (src.includes("viewport-fit=cover")) ok("viewport-fit=cover set")
+  else warn("viewport-fit=cover missing, so safe-area insets resolve to 0")
+}
+
 /* ---------- 3. artwork upscaling ---------- */
 
 head('3. Artwork')

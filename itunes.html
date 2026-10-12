@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Songless Unlimited</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8E%A4</text></svg>">
 <style>
@@ -262,6 +262,101 @@
     .play-btn { width: 52px; height: 52px; }
     .reveal .art { width: 136px; height: 136px; }
     .stat b { font-size: 1.1rem; }
+  }
+
+  /* ======================================================
+     Touch + small screens
+     ====================================================== */
+
+  /* On touch devices :hover sticks after a tap, leaving buttons looking
+     permanently focused. Neutralise the hover states there. */
+  @media (hover: none) {
+    button:hover:not(:disabled) { background: var(--card); border-color: var(--line); }
+    .btn-primary:hover:not(:disabled) { background: var(--gold); border-color: var(--gold); }
+    .play-btn:hover:not(:disabled) { background: var(--gold); }
+    a.mode:hover { transform: none; box-shadow: none; border-color: var(--line); }
+    a.mode:hover .go { gap: 6px; }
+    .suggest div:hover { background: transparent; }
+    .suggest div.sel { background: rgba(240,180,41,.14); }
+  }
+
+  /* Give active feedback, since hover can't. */
+  @media (hover: none) {
+    button:active:not(:disabled) { background: #2a2539; }
+    .suggest div:active { background: rgba(240,180,41,.2); }
+  }
+
+  @media (max-width: 560px) {
+    body {
+      /* dvh tracks the shrinking viewport when mobile chrome appears. */
+      min-height: 100dvh;
+      padding-block: 14px calc(22px + env(safe-area-inset-bottom));
+      padding-left: max(14px, env(safe-area-inset-left));
+      padding-right: max(14px, env(safe-area-inset-right));
+    }
+
+    .card { padding: 16px; }
+
+    /* Anything below 16px makes iOS Safari zoom the page on focus. */
+    input[type=text] { font-size: 16px; padding: 14px 13px; }
+
+    /* Volume is a hardware control on a phone; the slider is just a snag. */
+    .vol { display: none; }
+    .meta-row { flex-direction: row; align-items: center; justify-content: flex-start; }
+
+    /* Eight tick labels cannot fit across a phone without colliding. The bar
+       still shows progress and the row below states the current length. */
+    .ticks { display: none; }
+    .track { height: 12px; }
+
+    /* Eight slots at full height push the controls off screen, so empty ones
+       shrink to markers and only filled guesses take real space. */
+    .guesses { gap: 5px; margin-top: 14px; }
+    .slot { min-height: 38px; font-size: 0.84rem; padding: 0 11px; }
+    .slot:not(.filled) { min-height: 26px; }
+    .slot:not(.filled) .txt { display: none; }
+
+    /* Bigger, easier targets. */
+    .toolbar { gap: 6px; }
+    .toolbar button { padding: 9px 13px; font-size: 0.82rem; }
+    .actions button { padding: 13px 14px; }
+    .suggest div { padding: 13px; font-size: 0.9rem; }
+    .suggest { max-height: 42vh; }
+
+    .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .stat b { font-size: 1.25rem; }
+
+    .modal { padding: 12px; align-items: end; }
+    .modal .inner { max-height: 80dvh; }
+
+    .toast { bottom: calc(16px + env(safe-area-inset-bottom)); font-size: 0.82rem; }
+
+    /* Landing page */
+    header { margin-bottom: 20px; }
+    .tag { font-size: 0.88rem; }
+    a.mode { padding: 16px; }
+    ul.facts li { font-size: 0.78rem; }
+    .rules { padding: 15px 16px; margin-top: 20px; }
+    .ladder { font-size: 0.75rem; }
+  }
+
+  /* Very narrow phones. */
+  @media (max-width: 360px) {
+    h1 { font-size: 1.35rem; }
+    .play-btn { width: 48px; height: 48px; }
+    .play-btn svg { width: 21px; height: 21px; }
+    .player { gap: 11px; }
+    .reveal .art { width: 120px; height: 120px; }
+    .actions { flex-wrap: wrap; }
+  }
+
+  /* Short landscape: stop the card from needing a scroll for every action. */
+  @media (max-height: 460px) and (orientation: landscape) {
+    body { padding-block: 10px; }
+    header { margin-bottom: 12px; }
+    .badge, .ticks { display: none; }
+    .reveal .art { width: 92px; height: 92px; margin-bottom: 10px; }
+    .slot:not(.filled) { display: none; }
   }
 </style>
 </head>
