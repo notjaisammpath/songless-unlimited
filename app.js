@@ -1246,8 +1246,11 @@ function settingsHtml() {
       ${SOURCES.map(src => {
         const on = pendingSources.includes(src.key)
         return `<button class="src ${on ? 'on' : ''}" data-k="${src.key}" aria-pressed="${on}">
-          <b>${esc(src.label)}</b>
-          <span>${esc(sourceSize(src.key))}</span>
+          <span class="box" aria-hidden="true">✓</span>
+          <span class="txt">
+            <b>${esc(src.label)}</b>
+            <span>${esc(sourceSize(src.key))}</span>
+          </span>
         </button>`
       }).join('')}
     </div>

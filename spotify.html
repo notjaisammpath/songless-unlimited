@@ -521,13 +521,26 @@
   .srcs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 
   button.src {
-    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    display: flex; flex-direction: row; align-items: center; gap: 10px;
     padding: 11px 12px; border-radius: 10px; text-align: left;
     cursor: pointer; touch-action: manipulation;
     transition: border-color .14s, background .14s, color .14s;
   }
+  button.src .txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   button.src b { font-size: 0.82rem; font-weight: 700; letter-spacing: -0.01em; }
-  button.src span { font-size: 0.66rem; font-family: var(--mono); }
+  button.src .txt span { font-size: 0.66rem; font-family: var(--mono); }
+
+  /* The tick is always in the DOM so the row never reflows on toggle — it is
+     simply invisible until selected. */
+  button.src .box {
+    flex: 0 0 auto;
+    width: 19px; height: 19px; border-radius: 5px;
+    border: 1.5px solid var(--line-2);
+    display: grid; place-items: center;
+    font-size: 0.7rem; font-weight: 900; line-height: 1;
+    color: transparent; background: transparent;
+    transition: background .14s, border-color .14s, color .14s;
+  }
 
   /* The generic button hover rules outrank a single class, and on touch
      :hover sticks to the last chip tapped — which previously left a chip
@@ -539,7 +552,8 @@
     border-color: rgba(29,185,84,.5);
     color: var(--spotify);
   }
-  button.src.on span { color: rgba(29,185,84,.8); }
+  button.src.on .txt span { color: rgba(29,185,84,.8); }
+  button.src.on .box { background: var(--spotify); border-color: var(--spotify); color: #07210f; }
 
   button.src:not(.on),
   button.src:not(.on):hover {
@@ -547,7 +561,8 @@
     border-color: var(--line);
     color: var(--text);
   }
-  button.src:not(.on) span { color: var(--dimmer); }
+  button.src:not(.on) .txt span { color: var(--dimmer); }
+  button.src:not(.on) .box { background: transparent; border-color: var(--line-2); color: transparent; }
 
   @media (hover: hover) {
     button.src:not(.on):hover { background: rgba(255,255,255,.05); border-color: var(--line-2); }
