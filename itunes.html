@@ -488,12 +488,22 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
+
+  /* The title doubles as a link home from either game. */
+  h1 a.home {
+    color: inherit; text-decoration: none;
+    touch-action: manipulation;
+    transition: opacity .14s;
+  }
+  @media (hover: hover) { h1 a.home:hover { opacity: .8; } }
+  h1 a.home:active { opacity: .65; }
+  h1 a.home:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; border-radius: 6px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>Songless <span class="mark">Unlimited</span></h1>
+    <h1><a href="/" class="home">Songless <span class="mark">Unlimited</span></a></h1>
     <div class="badge">🎤 Hip-Hop &amp; Rap</div>
     <div class="toolbar">
       <button class="btn-sm" id="btn-stats">Stats</button>
