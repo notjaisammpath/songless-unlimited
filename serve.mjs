@@ -33,6 +33,7 @@ const server = createServer(async (req, res) => {
       '/spotify': '/spotify.html',
       '/callback': '/spotify.html',
       '/itunes': '/itunes.html',
+      '/probe': '/probe.html',
     }
     if (ROUTES[path]) path = ROUTES[path]
     else if (!extname(path)) path = '/index.html'

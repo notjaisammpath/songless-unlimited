@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Spotify probe</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%A7%AA</text></svg>">
+<style>
+  :root {
+    --bg: #0c0b10; --card: #1b1825; --line: #2e2940; --line-2: #413a58;
+    --text: #f3f0f7; --dim: #a79fbd; --dimmer: #6f6886;
+    --gold: #f0b429; --green: #35c46b; --red: #e4474f; --amber: #e8a33d;
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
+    --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: hidden; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font);
+    min-height: 100dvh;
+    padding: max(18px, env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+
+  h1 { font-size: 1.15rem; margin: 0 0 4px; letter-spacing: -0.02em; }
+  .sub { color: var(--dim); font-size: 0.8rem; margin: 0 0 16px; line-height: 1.5; }
+  .sub a { color: var(--gold); }
+
+  button {
+    font-family: inherit; font-size: 0.9rem; font-weight: 700;
+    border-radius: 10px; padding: 12px 16px; cursor: pointer;
+    touch-action: manipulation; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); width: 100%;
+  }
+  .primary { background: var(--gold); color: #241a02; border-color: var(--gold); font-weight: 800; }
+  button + button { margin-top: 8px; }
+  button:disabled { opacity: .5; }
+
+  .group { margin-top: 20px; }
+  .group h2 {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: .11em;
+    color: var(--dim); margin: 0 0 8px; font-weight: 700;
+  }
+
+  .row {
+    display: flex; align-items: flex-start; gap: 9px;
+    padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
+    margin-bottom: 6px; background: rgba(255,255,255,.015);
+    font-size: 0.8rem; line-height: 1.4;
+  }
+  .code {
+    flex: 0 0 auto; font-family: var(--mono); font-weight: 700;
+    font-size: 0.72rem; padding: 2px 6px; border-radius: 5px; min-width: 38px; text-align: center;
+  }
+  .ok   { background: rgba(53,196,107,.16); color: var(--green); }
+  .no   { background: rgba(228,71,79,.16); color: var(--red); }
+  .warn { background: rgba(232,163,61,.16); color: var(--amber); }
+  .ep { flex: 1 1 auto; min-width: 0; font-family: var(--mono); font-size: 0.74rem; word-break: break-word; }
+  .n { flex: 0 0 auto; color: var(--dim); font-family: var(--mono); font-size: 0.74rem; }
+  .why { color: var(--dimmer); font-size: 0.72rem; margin-top: 2px; }
+
+  pre {
+    background: #100e17; border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px; font-size: 0.7rem; overflow-x: auto; color: var(--dim);
+    font-family: var(--mono); line-height: 1.5; white-space: pre; margin: 0;
+  }
+  .err {
+    background: rgba(228,71,79,.1); border: 1px solid rgba(228,71,79,.35);
+    color: #ffb8bc; border-radius: 10px; padding: 12px; font-size: 0.82rem; line-height: 1.5;
+  }
+  .note { color: var(--dim); font-size: 0.78rem; line-height: 1.55; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Spotify endpoint probe</h1>
+  <p class="sub">
+    Checks every endpoint the catalog builder uses, against your own account.
+    Uses the token already stored by <a href="/spotify">My Spotify</a> — nothing is typed or sent anywhere.
+  </p>
+
+  <button class="primary" id="run">Run probe</button>
+  <div id="out"></div>
+</div>
+
+<script>
+'use strict'
+
+const $ = id => document.getElementById(id)
+const out = $('out')
+const lines = []   // plain-text mirror, for the copy button
+
+const CLIENT_FALLBACK = '71a99d582dc34ab9a458ff1e83b55bf0'
+
+function el(tag, cls, html) {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  if (html != null) e.innerHTML = html
+  return e
+}
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
+function group(title) {
+  const g = el('div', 'group')
+  g.appendChild(el('h2', null, esc(title)))
+  out.appendChild(g)
+  lines.push('', title.toUpperCase())
+  return g
+}
+
+function row(g, status, endpoint, count, why) {
+  const good = status >= 200 && status < 300
+  const cls = good ? 'ok' : (status === 403 ? 'warn' : 'no')
+  const r = el('div', 'row')
+  r.appendChild(el('span', `code ${cls}`, good ? 'OK' : esc(status)))
+  const mid = el('span', 'ep', esc(endpoint))
+  if (why) mid.appendChild(el('div', 'why', esc(why)))
+  r.appendChild(mid)
+  if (count != null) r.appendChild(el('span', 'n', esc(count)))
+  g.appendChild(r)
+  lines.push(`  ${(good ? 'OK' : status).toString().padEnd(4)} ${endpoint.padEnd(42)} ${count != null ? count : ''}${why ? '  // ' + why : ''}`)
+}
+
+/* ---------- token ---------- */
+
+async function getToken() {
+  let tok
+  try { tok = JSON.parse(localStorage.getItem('sp-token')) } catch {}
+  if (!tok?.access_token) throw new Error('No Spotify token stored. Open "My Spotify" and connect first.')
+
+  if (Date.now() < (tok.expires_at ?? 0)) return tok.access_token
+
+  // Expired — refresh it the same way the game does.
+  let clientId = CLIENT_FALLBACK
+  try { clientId = JSON.parse(localStorage.getItem('sp-client-id')) || CLIENT_FALLBACK } catch {}
+  if (!tok.refresh_token) throw new Error('Token expired and no refresh token. Reconnect in "My Spotify".')
+
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: tok.refresh_token,
+      client_id: clientId,
+    }),
+  })
+  const j = await res.json()
+  if (!res.ok) throw new Error(j.error_description || 'Could not refresh the token. Reconnect in "My Spotify".')
+
+  const next = { ...tok, ...j, refresh_token: j.refresh_token || tok.refresh_token, expires_at: Date.now() + (j.expires_in - 60) * 1000 }
+  try { localStorage.setItem('sp-token', JSON.stringify(next)) } catch {}
+  return next.access_token
+}
+
+/* ---------- probe ---------- */
+
+let TOKEN = ''
+
+async function hit(g, label, path, count, why) {
+  let status = 0, body = null, detail = ''
+  try {
+    const res = await fetch(`https://api.spotify.com/v1${path}`, { headers: { Authorization: `Bearer ${TOKEN}` } })
+    status = res.status
+    const raw = await res.text()
+    try { body = raw ? JSON.parse(raw) : null } catch {}
+    if (!res.ok) detail = body?.error?.message || ''
+  } catch (e) {
+    detail = e.message
+  }
+  const good = status >= 200 && status < 300
+  const n = good && count ? count(body) : null
+  row(g, status, label, n == null ? null : `${n}`, good ? why : (detail || why))
+  return body
+}
+
+const items = b => (b?.items?.length ?? 0)
+
+async function run() {
+  out.innerHTML = ''
+  lines.length = 0
+  $('run').disabled = true
+  $('run').textContent = 'Running…'
+
+  try {
+    TOKEN = await getToken()
+  } catch (e) {
+    out.appendChild(el('div', 'err', esc(e.message)))
+    $('run').disabled = false
+    $('run').textContent = 'Run probe'
+    return
+  }
+
+  let g = group('Identity')
+  const me = await hit(g, 'GET /me', '/me')
+  if (!me?.id) {
+    out.appendChild(el('div', 'err', 'Token rejected. Reconnect in "My Spotify" and try again.'))
+    $('run').disabled = false
+    $('run').textContent = 'Run probe'
+    return
+  }
+  const market = me.country || 'US'
+  g.appendChild(el('div', 'note', `${esc(me.display_name || me.id)} · ${esc(me.product)} · ${esc(market)}`))
+  lines.push(`  account: ${me.display_name || me.id} · ${me.product} · ${market}`)
+
+  g = group('Catalog sources')
+  const top = await hit(g, 'GET /me/top/tracks', '/me/top/tracks?limit=50&time_range=medium_term', items)
+  await hit(g, 'GET /me/top/tracks offset=49', '/me/top/tracks?limit=50&offset=49&time_range=medium_term', items, 'paginate past 50')
+  const saved = await hit(g, 'GET /me/tracks', '/me/tracks?limit=50', items)
+  await hit(g, 'GET /me/player/recently-played', '/me/player/recently-played?limit=50', items)
+  const albums = await hit(g, 'GET /me/albums', '/me/albums?limit=50', items, 'saved albums')
+  const follows = await hit(g, 'GET /me/following', '/me/following?type=artist&limit=50', b => b?.artists?.items?.length ?? 0)
+  const lists = await hit(g, 'GET /me/playlists', '/me/playlists?limit=50', items)
+
+  g = group('Often barred in Development Mode')
+  const pid = lists?.items?.find(Boolean)?.id
+  if (pid) await hit(g, 'GET /playlists/{id}/tracks', `/playlists/${pid}/tracks?limit=20`, items)
+
+  const aid = top?.items?.[0]?.artists?.[0]?.id || saved?.items?.[0]?.track?.artists?.[0]?.id
+  const tid = top?.items?.[0]?.id || saved?.items?.[0]?.track?.id
+
+  if (aid) {
+    await hit(g, 'GET /artists/{id}', `/artists/${aid}`, null, 'single artist')
+    await hit(g, 'GET /artists?ids=', `/artists?ids=${aid}`, b => b?.artists?.length ?? 0, 'batch form')
+    await hit(g, 'GET /artists/{id}/top-tracks', `/artists/${aid}/top-tracks?market=${market}`, b => b?.tracks?.length ?? 0, 'biggest new source')
+    await hit(g, 'GET /artists/{id}/albums', `/artists/${aid}/albums?limit=20&market=${market}`, items, 'not used yet')
+  }
+  if (tid) {
+    await hit(g, 'GET /audio-analysis/{id}', `/audio-analysis/${tid}`, null, 'onset detection')
+    await hit(g, 'GET /audio-features/{id}', `/audio-features/${tid}`, null, 'deprecated')
+    await hit(g, 'GET /recommendations', `/recommendations?limit=10&seed_tracks=${tid}`, b => b?.tracks?.length ?? 0, 'deprecated')
+  }
+
+  g = group('Playback')
+  await hit(g, 'GET /me/player/devices', '/me/player/devices', b => b?.devices?.length ?? 0)
+
+  g = group('Library size')
+  const totals = [
+    `saved tracks:    ${saved?.total ?? '?'}`,
+    `saved albums:    ${albums?.total ?? '?'}`,
+    `artists followed:${follows?.artists?.total ?? '?'}`,
+    `playlists:       ${lists?.total ?? '?'}`,
+  ].join('\n')
+  g.appendChild(el('pre', null, esc(totals)))
+  lines.push('', 'LIBRARY SIZE', totals.split('\n').map(l => '  ' + l).join('\n'))
+
+  const copy = el('button', null, 'Copy results')
+  copy.onclick = () => {
+    navigator.clipboard?.writeText(lines.join('\n'))
+      .then(() => { copy.textContent = 'Copied'; setTimeout(() => { copy.textContent = 'Copy results' }, 1600) })
+      .catch(() => { copy.textContent = 'Copy failed' })
+  }
+  out.appendChild(el('div', 'group')).appendChild(copy)
+
+  $('run').disabled = false
+  $('run').textContent = 'Run again'
+}
+
+$('run').onclick = run
+</script>
+</body>
+</html>
