@@ -958,10 +958,17 @@ function submitGuess() {
 
   if (!guessed) { toast('Pick a song from the list'); return }
 
+  // A repeat of an earlier guess shouldn't burn an attempt.
+  if (guesses.some(g => g.id && g.id === guessed.id)) {
+    toast('You already guessed that one')
+    $('guess').select()
+    return
+  }
+
   const correct = guessed.id === song.id
     || (norm(guessed.title) === norm(song.title) && norm(guessed.primaryArtist) === norm(song.primaryArtist))
 
-  guesses.push({ label: label(guessed), kind: correct ? 'correct' : 'wrong' })
+  guesses.push({ label: label(guessed), id: guessed.id, kind: correct ? 'correct' : 'wrong' })
 
   if (correct) finish(true)
   else if (guesses.length >= MAX_ATTEMPTS) finish(false)

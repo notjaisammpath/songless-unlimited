@@ -117,6 +117,20 @@ if (norm) {
     : ok('every track is findable by typing its title')
 }
 
+/* ---------- 2b. guess rules ---------- */
+
+head('2b. Guess rules')
+
+const scriptForRules = (html.match(/<script>([\s\S]*?)<\/script>/) || [, ''])[1]
+
+scriptForRules.includes('already guessed that one')
+  ? ok('a repeated guess is rejected instead of burning an attempt')
+  : bad('no duplicate-guess guard — the same wrong answer can be submitted repeatedly')
+
+scriptForRules.includes("toast('Pick a song from the list')")
+  ? ok('free-text that matches nothing is rejected')
+  : bad('unmatched free text is not rejected — a typo could count as a guess')
+
 /* ---------- 3. artwork upscaling ---------- */
 
 head('3. Artwork')

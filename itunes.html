@@ -675,6 +675,13 @@ function submitGuess() {
     return
   }
 
+  // A repeat of an earlier guess shouldn't burn an attempt.
+  if (guesses.some(g => g.trackId && g.trackId === guessed.trackId)) {
+    toast('You already guessed that one')
+    $('guess').select()
+    return
+  }
+
   const correct = guessed.trackId === song.trackId
     || norm(guessed.title) === norm(song.title) && norm(guessed.artist) === norm(song.artist)
 
