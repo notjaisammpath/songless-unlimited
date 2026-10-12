@@ -18,317 +18,170 @@
     --dimmer: #6f6886;
     --gold: #f0b429;
     --spotify: #1db954;
-    --radius: 14px;
+    --radius: 15px;
     --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;
   }
 
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
 
   body {
-    background: radial-gradient(1200px 600px at 50% -10%, #1d1830 0%, var(--bg) 55%) no-repeat, var(--bg);
+    background: radial-gradient(1100px 560px at 50% -12%, #1e1832 0%, var(--bg) 58%) no-repeat, var(--bg);
     color: var(--text);
     font-family: var(--font);
-    min-height: 100vh;
-    padding-block: 40px 56px;
-    padding-left: 18px;
-    padding-right: 18px;
+    min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: max(24px, env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom));
     -webkit-font-smoothing: antialiased;
   }
 
-  .wrap { max-width: 560px; margin: 0 auto; }
+  .wrap { width: 100%; max-width: 420px; }
 
-  header { text-align: center; margin-bottom: 30px; }
+  header { text-align: center; margin-bottom: 26px; }
 
   h1 {
-    font-size: clamp(1.7rem, 7vw, 2.4rem);
-    margin: 0 0 10px;
-    letter-spacing: -0.03em;
+    font-size: clamp(1.75rem, 8vw, 2.3rem);
+    margin: 0 0 8px;
+    letter-spacing: -0.035em;
     font-weight: 800;
   }
   h1 .mark { color: var(--gold); }
 
-  .tag {
-    color: var(--dim); font-size: 0.95rem; line-height: 1.6;
-    max-width: 30rem; margin: 0 auto;
-  }
-  .tag b { color: var(--text); }
+  .tag { margin: 0; color: var(--dim); font-size: 0.92rem; line-height: 1.5; }
 
-  .modes { display: grid; gap: 14px; }
+  /* ---------- the two choices ---------- */
 
-  a.mode {
-    display: block; text-decoration: none; color: inherit;
+  .picks { display: grid; gap: 11px; }
+
+  a.pick {
+    display: flex; align-items: center; gap: 14px;
+    text-decoration: none; color: inherit;
     background: linear-gradient(180deg, var(--card), var(--bg-2));
     border: 1px solid var(--line);
     border-radius: var(--radius);
-    padding: 20px;
-    transition: border-color .15s, transform .1s, box-shadow .15s;
+    padding: 17px 18px;
+    touch-action: manipulation;
+    transition: border-color .15s, transform .1s;
   }
-  a.mode:hover {
-    border-color: var(--line-2);
-    transform: translateY(-2px);
-    box-shadow: 0 20px 44px -26px rgba(0,0,0,.9);
+  a.pick:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+
+  .icon {
+    flex: 0 0 auto; width: 42px; height: 42px; border-radius: 11px;
+    display: grid; place-items: center; font-size: 1.25rem;
   }
-  a.mode:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+  .icon.hits { background: rgba(240,180,41,.13); border: 1px solid rgba(240,180,41,.3); }
+  .icon.sp { background: rgba(29,185,84,.12); border: 1px solid rgba(29,185,84,.3); }
 
-  .mode-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  .mode-head h2 { margin: 0; font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em; }
+  .body { min-width: 0; flex: 1 1 auto; }
+  .body h2 { margin: 0 0 3px; font-size: 1.02rem; font-weight: 800; letter-spacing: -0.015em; }
+  .body p { margin: 0; font-size: 0.8rem; color: var(--dim); line-height: 1.45; }
 
-  .pill {
-    font-size: 0.64rem; font-weight: 800; text-transform: uppercase;
-    letter-spacing: .09em; padding: 4px 9px; border-radius: 999px;
+  .arrow { flex: 0 0 auto; color: var(--dimmer); font-size: 1.05rem; transition: transform .15s; }
+
+  @media (hover: hover) {
+    a.pick:hover { border-color: var(--line-2); transform: translateY(-2px); }
+    a.pick:hover .arrow { transform: translateX(3px); color: var(--gold); }
   }
-  .pill.open { color: var(--gold); background: rgba(240,180,41,.11); border: 1px solid rgba(240,180,41,.3); }
-  .pill.sp { color: var(--spotify); background: rgba(29,185,84,.1); border: 1px solid rgba(29,185,84,.3); }
+  a.pick:active { transform: translateY(1px); }
 
-  .mode p { margin: 0 0 12px; color: var(--dim); font-size: 0.89rem; line-height: 1.6; }
+  /* ---------- how to play ---------- */
 
-  ul.facts { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; }
-  ul.facts li {
-    font-size: 0.8rem; color: var(--dimmer);
-    padding-left: 17px; position: relative; line-height: 1.5;
-  }
-  ul.facts li::before {
-    content: '·'; position: absolute; left: 6px; color: var(--gold); font-weight: 800;
-  }
-  ul.facts li b { color: var(--dim); font-weight: 600; }
-
-  .go {
-    margin-top: 14px; font-size: 0.86rem; font-weight: 700; color: var(--gold);
-    display: inline-flex; align-items: center; gap: 6px;
-  }
-  a.mode:hover .go { gap: 10px; }
-  .go span { transition: transform .15s; }
-
-  /* ---------- collapsed extra modes ---------- */
-  details.more { margin-top: 14px; }
-
-  details.more > summary {
-    list-style: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
-    padding: 13px 18px;
-    font-size: 0.86rem; font-weight: 600; color: var(--dim);
-    background: rgba(255,255,255,.02);
-    border: 1px solid var(--line); border-radius: var(--radius);
+  .how {
+    display: block; width: 100%; margin-top: 16px;
+    font-family: inherit; font-size: 0.83rem; font-weight: 600;
+    color: var(--dim); background: none;
+    border: 1px solid var(--line); border-radius: 11px;
+    padding: 11px; cursor: pointer; touch-action: manipulation;
     transition: color .14s, border-color .14s;
   }
-  /* Safari/Chrome still draw their own marker without this. */
-  details.more > summary::-webkit-details-marker { display: none; }
-  details.more > summary::marker { content: ''; }
+  .how:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  @media (hover: hover) { .how:hover { color: var(--text); border-color: var(--line-2); } }
 
-  details.more > summary:hover { color: var(--text); border-color: var(--line-2); }
-  details.more > summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-
-  .chev { color: var(--dimmer); font-size: 0.8rem; transition: transform .18s; }
-  details.more[open] > summary { color: var(--text); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-  details.more[open] .chev { transform: rotate(180deg); }
-  details.more[open] > .mode {
-    border-top: none;
-    border-top-left-radius: 0; border-top-right-radius: 0;
+  dialog {
+    border: 1px solid var(--line-2); border-radius: var(--radius);
+    background: var(--card); color: var(--text);
+    padding: 22px; width: calc(100% - 32px); max-width: 390px;
+    max-height: 82dvh; overflow-y: auto;
+    font-family: var(--font);
   }
-  details.more[open] > .mode:hover { transform: none; }
+  dialog::backdrop { background: rgba(6,5,10,.78); backdrop-filter: blur(3px); }
+  dialog h3 { margin: 0 0 14px; font-size: 1rem; }
+  dialog p { margin: 0 0 13px; font-size: 0.87rem; line-height: 1.62; color: var(--dim); }
+  dialog p:last-of-type { margin-bottom: 18px; }
+  dialog b { color: var(--text); }
 
-  .rules {
-    margin-top: 28px; border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 18px 20px; background: rgba(255,255,255,.015);
-  }
-  .rules h3 { margin: 0 0 10px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: .11em; color: var(--dim); }
-  .rules p { margin: 0; font-size: 0.86rem; color: var(--dim); line-height: 1.65; }
   .ladder {
-    font-family: var(--mono); color: var(--gold); font-weight: 700;
-    font-size: 0.84rem; letter-spacing: -0.01em;
+    display: block; font-family: var(--mono); color: var(--gold);
+    font-weight: 700; font-size: 0.8rem; margin-top: 4px;
   }
 
-  footer { margin-top: 26px; text-align: center; font-size: 0.75rem; color: var(--dimmer); line-height: 1.7; }
-  footer a { color: var(--dim); }
-
-  @media (max-width: 420px) {
-    .mode-head h2 { font-size: 1rem; }
+  .close {
+    width: 100%; font-family: inherit; font-size: 0.9rem; font-weight: 800;
+    background: var(--gold); color: #241a02; border: none;
+    border-radius: 10px; padding: 11px; cursor: pointer; touch-action: manipulation;
   }
 
-  /* ======================================================
-     Touch + small screens
-     ====================================================== */
+  footer { margin-top: 22px; text-align: center; font-size: 0.72rem; color: var(--dimmer); line-height: 1.65; }
+  footer a { color: var(--dimmer); }
 
-  /* On touch devices :hover sticks after a tap, leaving buttons looking
-     permanently focused. Neutralise the hover states there. */
-  @media (hover: none) {
-    button:hover:not(:disabled) { background: var(--card); border-color: var(--line); }
-    .btn-primary:hover:not(:disabled) { background: var(--gold); border-color: var(--gold); }
-    .play-btn:hover:not(:disabled) { background: var(--gold); }
-    a.mode:hover { transform: none; box-shadow: none; border-color: var(--line); }
-    a.mode:hover .go { gap: 6px; }
-    .suggest div:hover { background: transparent; }
-    .suggest div.sel { background: rgba(240,180,41,.14); }
-  }
-
-  /* Give active feedback, since hover can't. */
-  @media (hover: none) {
-    button:active:not(:disabled) { background: #2a2539; }
-    .suggest div:active { background: rgba(240,180,41,.2); }
-  }
-
-  @media (max-width: 560px) {
-    body {
-      /* dvh tracks the shrinking viewport when mobile chrome appears. */
-      min-height: 100dvh;
-      padding-block: 14px calc(22px + env(safe-area-inset-bottom));
-      padding-left: max(14px, env(safe-area-inset-left));
-      padding-right: max(14px, env(safe-area-inset-right));
-    }
-
-    .card { padding: 16px; }
-
-    /* Anything below 16px makes iOS Safari zoom the page on focus. */
-    input[type=text] { font-size: 16px; padding: 14px 13px; }
-
-    /* Volume is a hardware control on a phone; the slider is just a snag. */
-    .vol { display: none; }
-    .meta-row { flex-direction: row; align-items: center; justify-content: flex-start; }
-
-    /* Eight tick labels cannot fit across a phone without colliding. The bar
-       still shows progress and the row below states the current length. */
-    .ticks { display: none; }
-    .track { height: 12px; }
-
-    /* Eight slots at full height push the controls off screen, so empty ones
-       shrink to markers and only filled guesses take real space. */
-    .guesses { gap: 5px; margin-top: 14px; }
-    .slot { min-height: 38px; font-size: 0.84rem; padding: 0 11px; }
-    .slot:not(.filled) { min-height: 26px; }
-    .slot:not(.filled) .txt { display: none; }
-
-    /* Bigger, easier targets. */
-    .toolbar { gap: 6px; }
-    .toolbar button { padding: 9px 13px; font-size: 0.82rem; }
-    .actions button { padding: 13px 14px; }
-    .suggest div { padding: 13px; font-size: 0.9rem; }
-    .suggest { max-height: 42vh; }
-
-    .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-    .stat b { font-size: 1.25rem; }
-
-    .modal { padding: 12px; align-items: end; }
-    .modal .inner { max-height: 80dvh; }
-
-    .toast { bottom: calc(16px + env(safe-area-inset-bottom)); font-size: 0.82rem; }
-
-    /* Landing page */
-    header { margin-bottom: 20px; }
-    .tag { font-size: 0.88rem; }
-    a.mode { padding: 16px; }
-    ul.facts li { font-size: 0.78rem; }
-    .rules { padding: 15px 16px; margin-top: 20px; }
-    .ladder { font-size: 0.75rem; }
-  }
-
-  /* Very narrow phones. */
   @media (max-width: 360px) {
-    h1 { font-size: 1.35rem; }
-    .play-btn { width: 48px; height: 48px; }
-    .play-btn svg { width: 21px; height: 21px; }
-    .player { gap: 11px; }
-    .reveal .art { width: 120px; height: 120px; }
-    .actions { flex-wrap: wrap; }
+    a.pick { padding: 15px; gap: 11px; }
+    .icon { width: 38px; height: 38px; font-size: 1.1rem; }
+    .body h2 { font-size: 0.96rem; }
   }
-
-  /* Short landscape: stop the card from needing a scroll for every action. */
-  @media (max-height: 460px) and (orientation: landscape) {
-    body { padding-block: 10px; }
-    header { margin-bottom: 12px; }
-    .badge, .ticks { display: none; }
-    .reveal .art { width: 92px; height: 92px; margin-bottom: 10px; }
-    .slot:not(.filled) { display: none; }
-  }
-
-  /* ------------------------------------------------------
-     Touch gesture hygiene
-     ------------------------------------------------------ */
-
-  /* Chrome on Android treats a quick double tap as zoom-to-fit and paints a
-     grey tap-highlight over the element while it waits to disambiguate.
-     Double-tapping Skip therefore flashed a grey overlay that stuck until the
-     keyboard was dismissed. manipulation opts out of double-tap zoom (and
-     removes the 300ms click delay). */
-  button,
-  a,
-  .suggest div,
-  input[type=range],
-  .play-btn { touch-action: manipulation; }
-
-  * { -webkit-tap-highlight-color: transparent; }
-
-  /* Keep text selection off controls so a fast double tap cannot start a
-     selection drag instead of firing the button. */
-  button, .slot, .ticks, .mode-head, .go { -webkit-user-select: none; user-select: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <h1>Songless <span class="mark">Unlimited</span></h1>
-    <p class="tag">
-      Name the rap track from <b>a tenth of a second</b> of audio. Guess wrong and you
-      hear a little more. No daily limit — play as long as you like.
-    </p>
+    <p class="tag">Name the rap track from 0.1 seconds.</p>
   </header>
 
-  <div class="modes">
-    <a class="mode" href="/spotify">
-      <div class="mode-head">
-        <h2>Spotify mode</h2>
-        <span class="pill sp">Premium · invite only</span>
-      </div>
-      <p>Built from your own listening history, playing the real tracks from the very beginning.</p>
-      <ul class="facts">
-        <li>Clips start at <b>true 0:00</b> — the actual intro, not a preview window</li>
-        <li>Catalog comes from <b>your</b> top tracks and saved songs</li>
-        <li>Needs <b>Spotify Premium</b> (Web Playback SDK requirement)</li>
-        <li>Your account must be added to the app's allowlist first — Spotify caps this at 25 people</li>
-      </ul>
-      <div class="go">Connect<span>→</span></div>
+  <div class="picks">
+    <a class="pick" href="/itunes">
+      <span class="icon hits" aria-hidden="true">🏆</span>
+      <span class="body">
+        <h2>Greatest Hits</h2>
+        <p>267 classics · no sign-in</p>
+      </span>
+      <span class="arrow" aria-hidden="true">→</span>
+    </a>
+
+    <a class="pick" href="/spotify">
+      <span class="icon sp" aria-hidden="true">♫</span>
+      <span class="body">
+        <h2>My Spotify</h2>
+        <p>Your library · Premium</p>
+      </span>
+      <span class="arrow" aria-hidden="true">→</span>
     </a>
   </div>
 
-  <!-- Native disclosure: collapsed by default, no JS, keyboard accessible. -->
-  <details class="more">
-    <summary>
-      <span>Other modes</span>
-      <span class="chev" aria-hidden="true">▾</span>
-    </summary>
-    <a class="mode" href="/itunes">
-      <div class="mode-head">
-        <h2>Curated mode</h2>
-        <span class="pill open">No sign-in</span>
-      </div>
-      <p>267 hand-curated hip-hop and rap tracks, 1985 to 2025. Works for anyone, instantly.</p>
-      <ul class="facts">
-        <li><b>Nothing to set up</b> — just press play</li>
-        <li>143 artists across every era of the genre</li>
-        <li>Shareable challenge links put a friend on the same song</li>
-        <li>Clips come from 30-second previews, so they start <b>mid-song</b>, usually on the hook</li>
-      </ul>
-      <div class="go">Play<span>→</span></div>
-    </a>
-  </details>
-
-  <div class="rules">
-    <h3>How a round works</h3>
-    <p>
-      Eight tries. You start with a tenth of a second and unlock more with every
-      wrong guess or skip:<br>
-      <span class="ladder">0.1s → 0.5s → 1s → 2s → 4s → 7s → 11s → 16s</span><br>
-      Start typing to search, then pick from the dropdown — a guess only counts
-      if it matches a real track.
-    </p>
-  </div>
+  <button class="how" id="btn-how">How to play</button>
 
   <footer>
-    Audio from the iTunes Search API and the Spotify Web Playback SDK.<br>
-    Nothing is downloaded or redistributed. ·
     <a href="https://github.com/notjaisammpath/songless-unlimited">Source</a>
   </footer>
 </div>
+
+<dialog id="dlg">
+  <h3>How to play</h3>
+  <p>
+    Eight tries. Each wrong guess or skip unlocks more audio:
+    <span class="ladder">0.1s → 0.5s → 1s → 2s → 4s → 7s → 11s → 16s</span>
+  </p>
+  <p>Type to search, then pick from the list. Repeat guesses are free.</p>
+  <button class="close" id="btn-close">Got it</button>
+</dialog>
+
+<script>
+  const dlg = document.getElementById('dlg')
+  document.getElementById('btn-how').onclick = () => dlg.showModal()
+  document.getElementById('btn-close').onclick = () => dlg.close()
+  // Tapping the backdrop closes it; clicks inside the panel must not.
+  dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close() })
+</script>
 </body>
 </html>
